@@ -17,6 +17,8 @@ function b64ToBytes(b64) {
   return bytes;
 }
 
+// Returns the number of text spans actually produced, so the caller can
+// detect a dead text layer (which silently kills the highlight tool).
 async function renderTextLayer(page, viewport, container) {
   try {
     if (pdfjsLib.TextLayer) {
@@ -26,23 +28,25 @@ async function renderTextLayer(page, viewport, container) {
         viewport,
       });
       await layer.render();
-      return;
     }
   } catch { /* fall through to manual layer */ }
-  // Manual fallback: absolutely positioned transparent spans per text item.
-  const tc = await page.getTextContent();
-  for (const item of tc.items) {
-    if (!item.str) continue;
-    const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
-    const fontHeight = Math.hypot(tx[2], tx[3]);
-    const span = document.createElement("span");
-    span.textContent = item.str;
-    span.style.left = tx[4] + "px";
-    span.style.top = tx[5] - fontHeight + "px";
-    span.style.fontSize = fontHeight + "px";
-    span.style.fontFamily = "sans-serif";
-    container.appendChild(span);
+  if (!container.querySelector("span")) {
+    // Manual fallback: absolutely positioned transparent spans per text item.
+    const tc = await page.getTextContent();
+    for (const item of tc.items) {
+      if (!item.str || !item.str.trim()) continue;
+      const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+      const fontHeight = Math.hypot(tx[2], tx[3]);
+      const span = document.createElement("span");
+      span.textContent = item.str;
+      span.style.left = tx[4] + "px";
+      span.style.top = tx[5] - fontHeight + "px";
+      span.style.fontSize = fontHeight + "px";
+      span.style.fontFamily = "sans-serif";
+      container.appendChild(span);
+    }
   }
+  return container.querySelectorAll("span").length;
 }
 
 async function main() {
@@ -58,6 +62,7 @@ async function main() {
   const doc = await pdfjsLib.getDocument({ data: b64ToBytes(entry.b64) }).promise;
 
   const targetWidth = Math.min(Math.max(window.innerWidth - 96, 640), 1100);
+  let textSpans = 0;
   for (let n = 1; n <= doc.numPages; n++) {
     const page = await doc.getPage(n);
     const base = page.getViewport({ scale: 1 });
@@ -92,10 +97,17 @@ async function main() {
       viewport,
       transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : undefined,
     }).promise;
-    await renderTextLayer(page, viewport, textLayerDiv);
+    textSpans += await renderTextLayer(page, viewport, textLayerDiv);
   }
 
   loadingEl.remove();
+  // Surface a dead text layer instead of letting highlight fail silently.
+  if (!textSpans) {
+    const note = document.createElement("div");
+    note.className = "fig-pdf-toolbar-note";
+    note.textContent = "This PDF exposes no selectable text, so the highlight tool has nothing to grab here. Comments and drawing still work.";
+    document.body.insertBefore(note, pagesEl);
+  }
   // Hand the source PDF to the overlay's dispatch.
   window.__figPDF = { src: entry.src, b64: entry.b64, name: entry.name };
 

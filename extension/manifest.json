@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Fig",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Annotate any page, press Fig, and a revised page is generated from your markings.",
   "permissions": [
     "activeTab",
@@ -11,9 +11,21 @@
   "background": {
     "service_worker": "background.js"
   },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
     "default_title": "Fig \u2014 annotate this page (\u2325\u21e7F)",
-    "default_popup": "popup.html"
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
   },
   "commands": {
     "toggle-fig": {

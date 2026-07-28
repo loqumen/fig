@@ -99,6 +99,7 @@ function buildPrompt(job, payload) {
     lines.push("- Remove the <mark data-fig-highlight> wrappers in the output (apply the change, drop the marker).");
   }
   lines.push("- If a marking is ambiguous, make the most reasonable change AND add an HTML comment <!-- fig-question: ... --> at the spot explaining the open question.");
+  lines.push('- Also write changes.json in this directory: a JSON array with one entry per marking IN THE ORDER GIVEN, each {"marking": "the marking text or [n]", "change": "one sentence: exactly what changed", "where": "short location in the revised document"}. If a marking produced no change, say why in "change".');
   lines.push("- Do not add scripts.");
   return lines.join("\n");
 }
@@ -146,7 +147,8 @@ function deployToVercel(jobDir, settings) {
     const slug = path.basename(jobDir);
     const dest = path.join(settings.vercelDir, "public", slug);
     fs.mkdirSync(dest, { recursive: true });
-    fs.copyFileSync(path.join(jobDir, "edited.html"), path.join(dest, "index.html"));
+    const html = injectChangelog(jobDir, fs.readFileSync(path.join(jobDir, "edited.html"), "utf8"));
+    fs.writeFileSync(path.join(dest, "index.html"), html);
     execFile("vercel", ["--prod"], { cwd: settings.vercelDir }, (err, stdout) => {
       fs.writeFileSync(
         path.join(jobDir, "deploy.txt"),
@@ -156,6 +158,37 @@ function deployToVercel(jobDir, settings) {
   } catch (e) {
     fs.writeFileSync(path.join(jobDir, "deploy.txt"), "Deploy failed: " + e.message);
   }
+}
+
+// Revealable change log, injected at serve/deploy time so edited.html stays
+// clean (the PDF export reads the raw file and never carries the widget).
+// Hidden by default; a small pill toggles it.
+function injectChangelog(jobDir, html) {
+  const p = path.join(jobDir, "changes.json");
+  if (!fs.existsSync(p)) return html;
+  let items;
+  try { items = JSON.parse(fs.readFileSync(p, "utf8")); } catch { return html; }
+  if (!Array.isArray(items) || !items.length) return html;
+  const esc = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const rows = items.map((c, i) => `
+    <li style="display:flex;gap:10px;padding:10px 0;align-items:flex-start;${i ? "box-shadow:0 -1px 0 #e8e6e1;" : ""}">
+      <span style="flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:#2C9F28;color:#fafaf8;font-size:11px;display:flex;align-items:center;justify-content:center;">${i + 1}</span>
+      <span style="display:block;min-width:0;">
+        <span style="display:block;color:#1a1a1a;">${esc(c.change)}</span>
+        ${c.marking ? `<span style="display:block;color:#9a9790;font-size:11px;margin-top:2px;">marking: ${esc(c.marking)}</span>` : ""}
+        ${c.where ? `<span style="display:block;color:#9a9790;font-size:11px;">${esc(c.where)}</span>` : ""}
+      </span>
+    </li>`).join("");
+  const widget = `
+<div id="fig-changelog" style="position:fixed;left:24px;bottom:24px;z-index:2147483000;font-family:'DM Sans',-apple-system,system-ui,sans-serif;font-size:13px;line-height:1.5;">
+  <div id="fig-changelog-panel" style="display:none;width:340px;max-height:55vh;overflow:auto;background:#fafaf8;color:#1a1a1a;border:1px solid #e8e6e1;border-radius:12px;box-shadow:0 6px 24px rgba(26,26,26,.18);padding:14px 16px;margin:0 0 10px;">
+    <div style="font-weight:500;margin-bottom:2px;">What changed</div>
+    <ul style="list-style:none;margin:0;padding:0;">${rows}</ul>
+  </div>
+  <button id="fig-changelog-btn" type="button" style="border:none;cursor:pointer;background:#2C9F28;color:#fafaf8;border-radius:999px;padding:9px 16px;font-family:inherit;font-size:13px;box-shadow:0 4px 16px rgba(26,26,26,.2);">Changes · ${items.length}</button>
+</div>
+<script>document.getElementById("fig-changelog-btn").addEventListener("click",function(){var p=document.getElementById("fig-changelog-panel");p.style.display=p.style.display==="none"?"block":"none";});</script>`;
+  return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, widget + "\n</body>") : html + widget;
 }
 
 function page(title, body) {
@@ -253,8 +286,10 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     if (!fs.existsSync(file)) { res.writeHead(404); res.end("not found"); return; }
+    let html = fs.readFileSync(file, "utf8");
+    if (!m[2]) html = injectChangelog(jobDir, html);
     res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(fs.readFileSync(file, "utf8"));
+    res.end(html);
     return;
   }
 
