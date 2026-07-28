@@ -12,7 +12,7 @@
   // guard would keep running stale code forever. On a version mismatch,
   // tear the old overlay down (its toggle detaches its own listeners) and
   // let this file rebuild fresh.
-  const FIG_VERSION = 3;
+  const FIG_VERSION = 4;
   if (window.__figToggle && window.__figVersion !== FIG_VERSION) {
     if (document.querySelector(".fig-toolbar")) { try { window.__figToggle(); } catch { /* stale */ } }
     window.__figToggle = null;
@@ -627,7 +627,8 @@
     document.addEventListener("click", onPageClick, true);
     document.addEventListener("mousedown", onMouseDown, true);
     document.addEventListener("mouseup", onMouseUp, true);
-    toast("Fig is on — Draw, Comment, or Suggest, then press Fig");
+    const ver = (() => { try { return chrome.runtime.getManifest().version; } catch { return ""; } })();
+    toast("Fig " + ver + " on — Draw, Comment, or Suggest, then press Fig");
   };
 
   const teardown = () => {
