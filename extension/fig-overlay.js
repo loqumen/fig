@@ -7,6 +7,17 @@
 // numbers + page-relative coordinates instead of a DOM snapshot.
 
 (() => {
+  // Version-stamped injection: after an extension reload, the OLD overlay
+  // closure still owns window.__figToggle on already-open pages, so a plain
+  // guard would keep running stale code forever. On a version mismatch,
+  // tear the old overlay down (its toggle detaches its own listeners) and
+  // let this file rebuild fresh.
+  const FIG_VERSION = 3;
+  if (window.__figToggle && window.__figVersion !== FIG_VERSION) {
+    if (document.querySelector(".fig-toolbar")) { try { window.__figToggle(); } catch { /* stale */ } }
+    window.__figToggle = null;
+  }
+  window.__figVersion = FIG_VERSION;
   if (window.__figToggle) { window.__figToggle(); return; }
 
   const JEWELS = ["#1a1a1a", "#F76D18", "#2C9F28", "#8C89E7", "#2268FF"];
@@ -99,7 +110,7 @@
     if (state.mode !== "draw" && state.erasing) setErasing(false);
     if (state.mode === "highlight") toast("Select text to flag it");
     if (state.mode === "comment") toast("Click anywhere to drop a comment");
-    if (state.mode === "draw") toast("Drag to draw — the eraser removes single strokes");
+    if (state.mode === "draw") toast("Drag to draw. The eraser removes only what it touches.");
   };
 
   const setErasing = (on) => {
@@ -205,8 +216,12 @@
   };
 
   const onPageClick = (e) => {
-    if (!state.on || state.mode !== "comment") return;
+    if (!state.on) return;
     if (e.target.closest("[data-fig-ui]")) return;
+    // In highlight mode the page must not react to the selection gesture
+    // (links navigating, accordions toggling mid-drag).
+    if (state.mode === "highlight") { e.preventDefault(); e.stopPropagation(); return; }
+    if (state.mode !== "comment") return;
     e.preventDefault();
     e.stopPropagation();
     ensureLayerHeight();
@@ -251,13 +266,61 @@
     return marks;
   };
 
+  // Native selection is unreliable under an annotation tool: Chrome refuses
+  // to start selections inside <button> text, and pages that preventDefault
+  // on mousedown kill it entirely. So highlight mode (a) shields mousedown /
+  // mouseup from page handlers (stopPropagation at document capture — their
+  // preventDefault never runs), and (b) when native selection still comes
+  // back empty, computes the range GEOMETRICALLY from the drag start/end
+  // points via caretRangeFromPoint.
+  let hlDown = null;
+
+  const onMouseDown = (e) => {
+    if (!state.on || state.mode !== "highlight") return;
+    if (e.target && e.target.closest && e.target.closest("[data-fig-ui]")) return;
+    hlDown = { x: e.clientX, y: e.clientY };
+    e.stopPropagation();
+  };
+
+  const caretAt = (x, y) => {
+    if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y);
+    if (document.caretPositionFromPoint) {
+      const p = document.caretPositionFromPoint(x, y);
+      if (!p || !p.offsetNode) return null;
+      const r = document.createRange();
+      r.setStart(p.offsetNode, p.offset);
+      r.collapse(true);
+      return r;
+    }
+    return null;
+  };
+
+  const rangeFromDrag = (upX, upY) => {
+    if (!hlDown) return null;
+    const a = caretAt(hlDown.x, hlDown.y), b = caretAt(upX, upY);
+    if (!a || !b) return null;
+    const r = document.createRange();
+    try {
+      r.setStart(a.startContainer, a.startOffset);
+      r.setEnd(b.startContainer, b.startOffset);
+      if (r.collapsed) {
+        r.setStart(b.startContainer, b.startOffset);
+        r.setEnd(a.startContainer, a.startOffset);
+      }
+    } catch { return null; }
+    return r.collapsed ? null : r;
+  };
+
   const onMouseUp = (e) => {
     if (!state.on || state.mode !== "highlight") return;
     if (e.target && e.target.closest && e.target.closest("[data-fig-ui]")) return;
+    e.stopPropagation();
     const sel = window.getSelection();
-    if (!sel || sel.isCollapsed || !sel.rangeCount) return;
-    const range = sel.getRangeAt(0);
-    const text = sel.toString().trim();
+    let range = sel && !sel.isCollapsed && sel.rangeCount ? sel.getRangeAt(0) : null;
+    if (!range) range = rangeFromDrag(e.clientX, e.clientY);
+    hlDown = null;
+    if (!range) return;
+    const text = range.toString().trim();
     if (!text) return;
     const selRect = range.getBoundingClientRect();
     const id = nextId++;
@@ -265,7 +328,7 @@
       ? range.commonAncestorContainer.parentElement
       : range.commonAncestorContainer;
     const marks = wrapRangeTextNodes(range, id);
-    sel.removeAllRanges();
+    if (sel) sel.removeAllRanges();
     const pageEl = anchorEl && anchorEl.closest ? anchorEl.closest(".fig-pdf-page") : null;
     const h = {
       id, text: text.slice(0, 500), note: "", targetPath: cssPath(anchorEl),
@@ -311,25 +374,47 @@
       canvas.height = window.innerHeight;
       redraw();
     };
-    const distToSeg = (px, py, ax, ay, bx, by) => {
-      const dx = bx - ax, dy = by - ay;
-      const len2 = dx * dx + dy * dy;
-      let t = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
-      t = Math.max(0, Math.min(1, t));
-      return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
-    };
-    const strokeHit = (s, x, y, r) => {
-      if (s.points.length === 1) return Math.hypot(s.points[0].x - x, s.points[0].y - y) <= r;
-      for (let i = 1; i < s.points.length; i++) {
-        const a = s.points[i - 1], b = s.points[i];
-        if (distToSeg(x, y, a.x, a.y, b.x, b.y) <= r) return true;
+    // True erasing: only the parts of a stroke under the eraser disappear;
+    // the surviving pieces continue as independent strokes. The path is
+    // densified first so fast-drawn (sparse-point) segments erase cleanly.
+    const densify = (points, maxGap) => {
+      const out = [points[0]];
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1], b = points[i];
+        const gap = Math.hypot(b.x - a.x, b.y - a.y);
+        const steps = Math.floor(gap / maxGap);
+        for (let k = 1; k <= steps; k++) {
+          out.push({ x: a.x + ((b.x - a.x) * k) / (steps + 1), y: a.y + ((b.y - a.y) * k) / (steps + 1) });
+        }
+        out.push(b);
       }
-      return false;
+      return out;
     };
+    const bbox = (points) => {
+      const xs = points.map((p) => p.x), ys = points.map((p) => p.y);
+      return {
+        x: Math.min(...xs), y: Math.min(...ys),
+        w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys),
+      };
+    };
+    const ERASE_R = 14;
     const eraseAt = (x, y) => {
-      const before = state.strokes.length;
-      state.strokes = state.strokes.filter((s) => !strokeHit(s, x, y, 12));
-      if (state.strokes.length !== before) redraw();
+      let changed = false;
+      const out = [];
+      for (const s of state.strokes) {
+        const pts = densify(s.points, 6);
+        const keep = pts.map((p) => Math.hypot(p.x - x, p.y - y) > ERASE_R);
+        if (keep.every(Boolean)) { out.push(s); continue; }
+        changed = true;
+        let run = [];
+        const flush = () => {
+          if (run.length >= 2) out.push({ ...s, points: run, box: bbox(run) });
+          run = [];
+        };
+        pts.forEach((p, i) => { if (keep[i]) run.push(p); else flush(); });
+        flush();
+      }
+      if (changed) { state.strokes = out; redraw(); }
     };
     let erasingDrag = false;
     canvas.addEventListener("pointerdown", (e) => {
@@ -500,7 +585,7 @@
     highlight.addEventListener("click", () => setMode("highlight"));
     clear.addEventListener("click", clearAll);
     help.addEventListener("click", () =>
-      toast("Draw (the eraser removes single strokes), drop comment pins (click a pin to open it), or select text to flag it. Enter posts a comment; Shift+Enter is a new line. Press Fig and the markings become a revised page. ⌥⇧F toggles the tools.", true)
+      toast("Draw (the eraser rubs out just the parts it touches), drop comment pins (click a pin to open it), or drag across text to flag it. Enter posts a comment; Shift+Enter is a new line. Press Fig and the markings become a revised page. ⌥⇧F toggles the tools.", true)
     );
     go.addEventListener("click", dispatch);
     state.ui.bar = bar;
@@ -540,6 +625,7 @@
     buildPinLayer();
     initCanvas();
     document.addEventListener("click", onPageClick, true);
+    document.addEventListener("mousedown", onMouseDown, true);
     document.addEventListener("mouseup", onMouseUp, true);
     toast("Fig is on — Draw, Comment, or Suggest, then press Fig");
   };
@@ -549,6 +635,7 @@
     state.mode = null;
     document.body.classList.remove("fig-mode-comment", "fig-mode-highlight", "fig-mode-draw");
     document.removeEventListener("click", onPageClick, true);
+    document.removeEventListener("mousedown", onMouseDown, true);
     document.removeEventListener("mouseup", onMouseUp, true);
     closeNote();
     for (const el of document.querySelectorAll("[data-fig-ui]")) el.remove();
