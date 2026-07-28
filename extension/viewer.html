@@ -1,0 +1,64 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Fig — PDF</title>
+<link rel="stylesheet" href="fig-overlay.css">
+<style>
+  body {
+    margin: 0;
+    background: #f0eee9;
+    font-family: 'DM Sans', -apple-system, system-ui, sans-serif;
+  }
+  .fig-pdf-toolbar-note {
+    text-align: center;
+    color: #4a4a46;
+    font-size: 13px;
+    padding: 14px 0 2px;
+  }
+  #pages {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+    padding: 18px 24px 120px;
+  }
+  .fig-pdf-page {
+    position: relative;
+    background: #ffffff;
+    box-shadow: 0 6px 24px rgba(26, 26, 26, 0.14);
+  }
+  .fig-pdf-page canvas { display: block; }
+  .textLayer {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    line-height: 1;
+    text-size-adjust: none;
+    forced-color-adjust: none;
+    transform-origin: 0 0;
+    caret-color: CanvasText;
+    z-index: 2;
+  }
+  .textLayer span, .textLayer br {
+    color: transparent;
+    position: absolute;
+    white-space: pre;
+    cursor: text;
+    transform-origin: 0% 0%;
+  }
+  .textLayer ::selection { background: rgba(140, 137, 231, 0.35); }
+  #loading {
+    text-align: center;
+    color: #4a4a46;
+    padding: 60px 0;
+    font-size: 14px;
+  }
+</style>
+</head>
+<body>
+  <div id="loading">Loading PDF…</div>
+  <div id="pages"></div>
+  <script type="module" src="viewer.js"></script>
+</body>
+</html>

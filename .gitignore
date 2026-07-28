@@ -1,0 +1,17 @@
+# internal working notes and site-staging fragments (not part of the product)
+CLAUDE.md
+products-row.html
+
+# runtime state lives in ~/.fig, never here
+.fig/
+
+# macOS
+.DS_Store
+
+# node
+node_modules/
+npm-debug.log*
+
+# build / packaging output
+dist/
+*.dmg

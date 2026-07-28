@@ -1,0 +1,49 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #fafaf8;
+    color: #1a1a1a;
+    width: 260px;
+    margin: 0;
+    padding: 14px;
+    font-size: 13px;
+  }
+  h1 { font-size: 14px; font-weight: 600; margin: 0 0 8px; }
+  p { margin: 0 0 10px; color: #4a4a46; line-height: 1.5; }
+  label { display: block; margin-bottom: 4px; color: #4a4a46; }
+  input {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid #e8e6e1;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font: inherit;
+  }
+  button {
+    margin-top: 8px;
+    border: 1px solid #1a1a1a;
+    background: #1a1a1a;
+    color: #fafaf8;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font: inherit;
+    cursor: pointer;
+  }
+  .status { margin-top: 8px; color: #4a4a46; }
+</style>
+</head>
+<body>
+  <h1>Fig</h1>
+  <p>Press <b>⌥ Option+Shift+F</b> on any page to open the tools. The companion must be running locally.</p>
+  <button id="open">Open Fig on this page</button>
+  <label for="token">Companion token (from ~/.fig/settings.json)</label>
+  <input id="token" type="password" autocomplete="off">
+  <button id="save">Save</button>
+  <div class="status" id="status"></div>
+  <script src="popup.js"></script>
+</body>
+</html>

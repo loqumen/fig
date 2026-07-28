@@ -1,0 +1,10 @@
+{
+  "name": "figd",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Fig companion daemon — receives annotated page snapshots and generates revised pages via the user's own claude CLI",
+  "main": "figd.js",
+  "scripts": {
+    "start": "node figd.js"
+  }
+}

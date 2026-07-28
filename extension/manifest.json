@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Fig",
+  "version": "0.1.2",
+  "description": "Annotate any page, press Fig, and a revised page is generated from your markings.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Fig \u2014 annotate this page (\u2325\u21e7F)",
+    "default_popup": "popup.html"
+  },
+  "commands": {
+    "toggle-fig": {
+      "suggested_key": {
+        "default": "Alt+Shift+F",
+        "mac": "Alt+Shift+F"
+      },
+      "description": "Toggle the Fig annotation tools on the current page"
+    }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "vendor/josefin-sans-500.woff2"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ]
+}
