@@ -144,7 +144,7 @@
   height: 28px !important;
   border-radius: 50% !important;
   border: none !important;
-  background: #FF1493 !important;
+  background: #2C9F28 !important;
   color: #fafaf8 !important;
   font-size: 12px !important;
   font-weight: 700 !important;
@@ -223,13 +223,13 @@
 }
 
 mark[data-fig-highlight] {
-  background: rgba(245, 200, 66, 0.40) !important;
+  background: rgba(44, 159, 40, 0.28) !important;
   color: inherit !important;
   padding: 0 !important;
   transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1) !important;
 }
 
-mark[data-fig-highlight]:hover { background: rgba(245, 200, 66, 0.66) !important; }
+mark[data-fig-highlight]:hover { background: rgba(44, 159, 40, 0.48) !important; }
 
 .fig-draw-canvas[data-fig-ui] {
   position: fixed !important;
@@ -240,8 +240,50 @@ mark[data-fig-highlight]:hover { background: rgba(245, 200, 66, 0.66) !important
 }
 
 body.fig-mode-draw .fig-draw-canvas[data-fig-ui] { pointer-events: auto !important; cursor: crosshair !important; }
+body.fig-mode-draw.fig-erasing .fig-draw-canvas[data-fig-ui] { cursor: cell !important; }
 body.fig-mode-comment { cursor: crosshair !important; }
 body.fig-mode-highlight { cursor: text !important; }
+
+/* Highlight mode must be able to select ANY text: many pages (and native
+   buttons) carry user-select: none, which silently kills the tool. */
+body.fig-mode-highlight, body.fig-mode-highlight * {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+}
+
+.fig-draw-colors[data-fig-ui] .fig-eraser {
+  width: 24px !important;
+  height: 24px !important;
+  min-width: 24px !important;
+  border-radius: 6px !important;
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  color: #4a4a46 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer !important;
+  margin: 0 0 0 4px !important;
+  padding: 0 !important;
+  transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1), color 150ms cubic-bezier(0.32, 0.72, 0, 1) !important;
+}
+
+.fig-draw-colors[data-fig-ui] .fig-eraser svg {
+  width: 15px !important;
+  height: 15px !important;
+  display: block !important;
+  fill: none !important;
+  stroke: currentColor !important;
+}
+
+.fig-draw-colors[data-fig-ui] .fig-eraser:hover { background: #f0eee9 !important; color: #1a1a1a !important; }
+.fig-draw-colors[data-fig-ui] .fig-eraser.fig-active { background: #1a1a1a !important; color: #fafaf8 !important; }
+
+.fig-note[data-fig-ui] button.fig-delete {
+  color: #8a3b2e !important;
+  margin-right: auto !important;
+}
 
 .fig-toast[data-fig-ui] {
   position: fixed !important;

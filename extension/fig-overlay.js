@@ -14,6 +14,7 @@
   const state = {
     on: false,
     mode: null, // 'comment' | 'highlight' | 'draw'
+    erasing: false, // draw-mode submode: pointer removes individual strokes
     drawColor: JEWELS[0],
     comments: [], // {id, n, text, x, y, targetPath, targetText, page?, rx?, ry?}
     highlights: [], // {id, text, note, targetPath, page?}
@@ -30,6 +31,7 @@
     highlighter: '<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4l8 8Z"/>',
     trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
     help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+    eraser: '<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>',
   };
 
   const iconSvg = (name) =>
@@ -94,9 +96,16 @@
       btn.classList.toggle("fig-active", state.mode === m);
     }
     state.ui.drawColors.classList.toggle("fig-visible", state.mode === "draw");
+    if (state.mode !== "draw" && state.erasing) setErasing(false);
     if (state.mode === "highlight") toast("Select text to flag it");
     if (state.mode === "comment") toast("Click anywhere to drop a comment");
-    if (state.mode === "draw") toast("Drag to draw");
+    if (state.mode === "draw") toast("Drag to draw — the eraser removes single strokes");
+  };
+
+  const setErasing = (on) => {
+    state.erasing = on;
+    document.body.classList.toggle("fig-erasing", on);
+    if (state.ui.eraserBtn) state.ui.eraserBtn.classList.toggle("fig-active", on);
   };
 
   const ensureLayerHeight = () => {
@@ -105,7 +114,9 @@
 
   // ---------- note editor ----------
 
-  const openNote = (x, y, onSave) => {
+  // opts: {value: prefill text, onDelete: shows a Delete button}
+  // Enter posts; Shift+Enter inserts a newline; Escape cancels.
+  const openNote = (x, y, onSave, opts) => {
     closeNote();
     const box = document.createElement("div");
     box.className = "fig-note";
@@ -114,6 +125,7 @@
     box.style.top = y + 8 + "px";
     const ta = document.createElement("textarea");
     ta.placeholder = "What should change here?";
+    if (opts && opts.value) ta.value = opts.value;
     const actions = document.createElement("div");
     actions.className = "fig-note-actions";
     const cancel = document.createElement("button");
@@ -121,6 +133,17 @@
     const save = document.createElement("button");
     save.textContent = "Save";
     save.className = "fig-save";
+    if (opts && opts.onDelete) {
+      const del = document.createElement("button");
+      del.textContent = "Delete";
+      del.className = "fig-delete";
+      del.addEventListener("click", () => {
+        box.remove();
+        state.ui.note = null;
+        opts.onDelete();
+      });
+      actions.append(del);
+    }
     actions.append(cancel, save);
     box.append(ta, actions);
     document.body.appendChild(box);
@@ -134,7 +157,7 @@
     save.addEventListener("click", () => finish(true));
     cancel.addEventListener("click", () => finish(false));
     ta.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) finish(true);
+      if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); finish(true); return; }
       if (e.key === "Escape") finish(false);
     });
     state.ui.note = box;
@@ -144,6 +167,14 @@
 
   // ---------- comments ----------
 
+  const renumberPins = () => {
+    state.comments.forEach((k, i) => {
+      k.n = i + 1;
+      const el = state.ui.pins && state.ui.pins.get(k.id);
+      if (el) el.textContent = String(k.n);
+    });
+  };
+
   const addPin = (c) => {
     const pin = document.createElement("div");
     pin.className = "fig-pin";
@@ -151,13 +182,25 @@
     pin.style.left = c.x + "px";
     pin.style.top = c.y + "px";
     pin.textContent = String(c.n);
-    pin.title = c.text + " (click to remove)";
+    pin.title = c.text + " (click to open)";
     pin.addEventListener("click", (e) => {
       e.stopPropagation();
-      state.comments = state.comments.filter((k) => k.id !== c.id);
-      pin.remove();
-      toast("Comment removed");
+      openNote(c.x, c.y, (text) => {
+        c.text = text;
+        pin.title = text + " (click to open)";
+      }, {
+        value: c.text,
+        onDelete: () => {
+          state.comments = state.comments.filter((k) => k.id !== c.id);
+          state.ui.pins.delete(c.id);
+          pin.remove();
+          renumberPins();
+          toast("Comment removed");
+        },
+      });
     });
+    if (!state.ui.pins) state.ui.pins = new Map();
+    state.ui.pins.set(c.id, pin);
     state.ui.pinLayer.appendChild(pin);
   };
 
@@ -208,27 +251,31 @@
     return marks;
   };
 
-  const onMouseUp = () => {
+  const onMouseUp = (e) => {
     if (!state.on || state.mode !== "highlight") return;
+    if (e.target && e.target.closest && e.target.closest("[data-fig-ui]")) return;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return;
     const range = sel.getRangeAt(0);
     const text = sel.toString().trim();
     if (!text) return;
+    const selRect = range.getBoundingClientRect();
     const id = nextId++;
     const anchorEl = range.commonAncestorContainer.nodeType === 3
       ? range.commonAncestorContainer.parentElement
       : range.commonAncestorContainer;
     const marks = wrapRangeTextNodes(range, id);
-    if (!marks.length) return;
     sel.removeAllRanges();
     const pageEl = anchorEl && anchorEl.closest ? anchorEl.closest(".fig-pdf-page") : null;
     const h = {
       id, text: text.slice(0, 500), note: "", targetPath: cssPath(anchorEl),
       ...(pageEl ? { page: Number(pageEl.dataset.page) } : {}),
     };
+    // Record even when the visual paint fails (split-node markup edge): the
+    // highlight is an input to generation, not decoration.
     state.highlights.push(h);
-    const rect = marks[marks.length - 1].getBoundingClientRect();
+    if (!marks.length) toast("Text flagged (it spans markup, so it won't paint here)");
+    const rect = marks.length ? marks[marks.length - 1].getBoundingClientRect() : selRect;
     openNote(window.scrollX + rect.left, window.scrollY + rect.bottom, (note) => {
       h.note = note;
     });
@@ -264,17 +311,46 @@
       canvas.height = window.innerHeight;
       redraw();
     };
+    const distToSeg = (px, py, ax, ay, bx, by) => {
+      const dx = bx - ax, dy = by - ay;
+      const len2 = dx * dx + dy * dy;
+      let t = len2 ? ((px - ax) * dx + (py - ay) * dy) / len2 : 0;
+      t = Math.max(0, Math.min(1, t));
+      return Math.hypot(px - (ax + t * dx), py - (ay + t * dy));
+    };
+    const strokeHit = (s, x, y, r) => {
+      if (s.points.length === 1) return Math.hypot(s.points[0].x - x, s.points[0].y - y) <= r;
+      for (let i = 1; i < s.points.length; i++) {
+        const a = s.points[i - 1], b = s.points[i];
+        if (distToSeg(x, y, a.x, a.y, b.x, b.y) <= r) return true;
+      }
+      return false;
+    };
+    const eraseAt = (x, y) => {
+      const before = state.strokes.length;
+      state.strokes = state.strokes.filter((s) => !strokeHit(s, x, y, 12));
+      if (state.strokes.length !== before) redraw();
+    };
+    let erasingDrag = false;
     canvas.addEventListener("pointerdown", (e) => {
       if (state.mode !== "draw") return;
+      if (state.erasing) {
+        erasingDrag = true;
+        canvas.setPointerCapture(e.pointerId);
+        eraseAt(e.pageX, e.pageY);
+        return;
+      }
       live = [{ x: e.pageX, y: e.pageY }];
       canvas.setPointerCapture(e.pointerId);
     });
     canvas.addEventListener("pointermove", (e) => {
+      if (erasingDrag) { eraseAt(e.pageX, e.pageY); return; }
       if (!live) return;
       live.push({ x: e.pageX, y: e.pageY });
       redraw();
     });
     canvas.addEventListener("pointerup", () => {
+      if (erasingDrag) { erasingDrag = false; return; }
       if (!live || live.length < 2) { live = null; return; }
       const xs = live.map((p) => p.x), ys = live.map((p) => p.y);
       const box = {
@@ -351,6 +427,7 @@
   };
 
   const clearAll = () => {
+    if (state.ui.pins) state.ui.pins.clear();
     state.comments = [];
     state.highlights = [];
     state.strokes = [];
@@ -380,10 +457,18 @@
       dot.title = "Draw color";
       dot.addEventListener("click", () => {
         state.drawColor = color;
+        setErasing(false);
         drawColors.querySelectorAll(".fig-color").forEach((d) => d.classList.toggle("fig-active", d === dot));
       });
       drawColors.appendChild(dot);
     }
+    const eraser = document.createElement("button");
+    eraser.className = "fig-eraser";
+    eraser.title = "Eraser — click or drag over a stroke to remove it";
+    eraser.innerHTML = iconSvg("eraser");
+    eraser.addEventListener("click", () => setErasing(!state.erasing));
+    drawColors.appendChild(eraser);
+    state.ui.eraserBtn = eraser;
 
     const mkIcon = (icon, title) => {
       const b = document.createElement("button");
@@ -415,7 +500,7 @@
     highlight.addEventListener("click", () => setMode("highlight"));
     clear.addEventListener("click", clearAll);
     help.addEventListener("click", () =>
-      toast("Draw, drop comment pins, or select text to flag it. Press Fig and the markings become a revised page. ⌥⇧F toggles the tools.", true)
+      toast("Draw (the eraser removes single strokes), drop comment pins (click a pin to open it), or select text to flag it. Enter posts a comment; Shift+Enter is a new line. Press Fig and the markings become a revised page. ⌥⇧F toggles the tools.", true)
     );
     go.addEventListener("click", dispatch);
     state.ui.bar = bar;
@@ -455,7 +540,7 @@
     buildPinLayer();
     initCanvas();
     document.addEventListener("click", onPageClick, true);
-    document.addEventListener("mouseup", onMouseUp);
+    document.addEventListener("mouseup", onMouseUp, true);
     toast("Fig is on — Draw, Comment, or Suggest, then press Fig");
   };
 
@@ -464,13 +549,15 @@
     state.mode = null;
     document.body.classList.remove("fig-mode-comment", "fig-mode-highlight", "fig-mode-draw");
     document.removeEventListener("click", onPageClick, true);
-    document.removeEventListener("mouseup", onMouseUp);
+    document.removeEventListener("mouseup", onMouseUp, true);
     closeNote();
     for (const el of document.querySelectorAll("[data-fig-ui]")) el.remove();
     document.querySelectorAll("mark[data-fig-highlight]").forEach((m) => m.replaceWith(...m.childNodes));
     state.comments = [];
     state.highlights = [];
     state.strokes = [];
+    state.erasing = false;
+    document.body.classList.remove("fig-erasing");
     state.ui = {};
   };
 
