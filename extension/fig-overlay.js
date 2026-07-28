@@ -12,7 +12,7 @@
   // guard would keep running stale code forever. On a version mismatch,
   // tear the old overlay down (its toggle detaches its own listeners) and
   // let this file rebuild fresh.
-  const FIG_VERSION = 4;
+  const FIG_VERSION = 5;
   if (window.__figToggle && window.__figVersion !== FIG_VERSION) {
     if (document.querySelector(".fig-toolbar")) { try { window.__figToggle(); } catch { /* stale */ } }
     window.__figToggle = null;
@@ -605,6 +605,13 @@
   // Loqumen logo font for the Fig button, served from the extension bundle
   // (web_accessible_resources) so it loads inside any page.
   const injectFont = () => {
+    // Must never kill setup(): getURL is missing in some contexts.
+    try {
+      injectFontInner();
+    } catch { /* toolbar falls back to system fonts */ }
+  };
+
+  const injectFontInner = () => {
     if (document.querySelector("style[data-fig-font]")) return;
     const style = document.createElement("style");
     style.setAttribute("data-fig-ui", "1");

@@ -92,12 +92,19 @@ async function main() {
 
     pagesEl.appendChild(wrap);
 
-    await page.render({
+    // Text layer FIRST, canvas paint decoupled. A canvas render that never
+    // resolves (GPU stalls, background-tab rAF starvation) previously hung
+    // this loop BEFORE any text layer was built — the page still looked
+    // rendered (PDF.js paints progressively), but highlight had no text to
+    // grab. The text layer must never wait on the canvas.
+    try {
+      textSpans += await renderTextLayer(page, viewport, textLayerDiv);
+    } catch { /* one bad page must not block the rest */ }
+    page.render({
       canvasContext: canvas.getContext("2d"),
       viewport,
       transform: ratio !== 1 ? [ratio, 0, 0, ratio, 0, 0] : undefined,
-    }).promise;
-    textSpans += await renderTextLayer(page, viewport, textLayerDiv);
+    }).promise.catch(() => { /* canvas paint is best-effort */ });
   }
 
   loadingEl.remove();
