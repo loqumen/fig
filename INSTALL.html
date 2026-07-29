@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Install Fig</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, 'DM Sans', system-ui, sans-serif;
+    font-weight: 300;
+    background: #fafaf8;
+    color: #4a4a46;
+    font-size: 17px;
+    line-height: 1.7;
+    font-variant-numeric: tabular-nums;
+  }
+  .page { max-width: 640px; margin: 0 auto; padding: 56px 24px 96px; }
+  h1 { font-size: 1.3rem; font-weight: 400; color: #1a1a1a; margin: 16px 0 8px; }
+  .lede { font-size: 0.95rem; }
+  h2 { font-size: 0.95rem; font-weight: 500; color: #1a1a1a; margin: 40px 0 8px; }
+  ol { margin: 8px 0 0 20px; }
+  li { margin-bottom: 10px; font-size: 0.92rem; }
+  code {
+    font-family: Courier, monospace;
+    font-size: 0.85em;
+    background: #f1efeb;
+    padding: 2px 7px;
+    border-radius: 4px;
+  }
+  a { color: #2C9F28; text-decoration: underline; text-underline-offset: 3px; }
+  .mark { width: 72px; height: 72px; }
+  .note { font-size: 0.85rem; color: #9a9790; margin-top: 32px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <svg class="mark" viewBox="0 0 560 560" aria-hidden="true"><rect width="560" height="560" rx="120" fill="#2C9F28"/><g transform="translate(40,40)"><circle cx="240" cy="240" r="208" fill="#ffffff"/><g transform="translate(70,410) rotate(-45)" fill="#2C9F28"><path d="M 9.0 -31.7 L 323.0 -15.9 Q 330.0 -15.5 330.0 -8.5 L 330.0 8.5 Q 330.0 15.5 323.0 15.9 L 9.0 31.7 Q 0.0 32.0 0.0 23.0 L 0.0 -23.0 Q 0.0 -32.0 9.0 -31.7 Z"/></g><ellipse cx="235" cy="123" rx="36" ry="53" fill="#2C9F28" transform="rotate(7 235 123)"/></g></svg>
+  <h1>Install Fig</h1>
+  <p class="lede">Fig is a browser extension paired with a small local companion. Marking up a page and pressing Fig hands the markings to the AI on this machine, which produces the revised page.</p>
+
+  <h2>Before installing</h2>
+  <ol>
+    <li><a href="https://claude.com/claude-code">Claude Code</a> installed and signed in (it does the thinking).</li>
+    <li><a href="https://nodejs.org">Node.js</a> 18 or later (the companion is a single dependency-free script).</li>
+  </ol>
+
+  <h2>1 &mdash; Start the companion</h2>
+  <ol>
+    <li>Copy this Fig folder somewhere permanent (Applications or home folder is fine).</li>
+    <li>In Terminal, run <code>./companion/install.sh</code> from that folder. It starts the companion and keeps it running at login.</li>
+  </ol>
+
+  <h2>2 &mdash; Add the extension</h2>
+  <ol>
+    <li>Open <code>chrome://extensions</code> (or <code>brave://extensions</code>), turn on Developer mode, click <b>Load unpacked</b>, and choose this folder's <code>extension</code> directory.</li>
+    <li>Click the Fig toolbar icon and paste the token from <code>~/.fig/settings.json</code> (the installer prints where to find it). This gate keeps web pages from driving the companion.</li>
+    <li>Optional: in the extension's Details, enable <b>Allow access to file URLs</b> so Fig works on local files too.</li>
+  </ol>
+
+  <h2>Use it</h2>
+  <ol>
+    <li>Press <b>Option-Shift-F</b> on any page. Draw, drop comment pins, or highlight text with notes.</li>
+    <li>Press the <b>Fig</b> button. A status page opens and becomes the revised page, with a change log in the corner.</li>
+  </ol>
+
+  <p class="note">Fig is part of the <a href="https://loqumen.com/products">Loqumen suite</a>. Source: <a href="https://github.com/bnt21/fig">github.com/bnt21/fig</a>. MIT licensed.</p>
+</div>
+</body>
+</html>
