@@ -104,13 +104,28 @@ function buildPrompt(job, payload) {
   return lines.join("\n");
 }
 
+// figd may run under launchd, whose PATH has no user binaries — resolve
+// the claude CLI explicitly (same candidates as Summon's ask lane).
+function claudeBin() {
+  const cands = [
+    path.join(os.homedir(), ".local/bin/claude"),
+    "/Applications/cmux.app/Contents/Resources/bin/claude",
+    "/opt/homebrew/bin/claude",
+    "/usr/local/bin/claude",
+  ];
+  for (const c of cands) {
+    try { fs.accessSync(c, fs.constants.X_OK); return c; } catch { /* next */ }
+  }
+  return "claude";
+}
+
 function runGeneration(jobDir, settings) {
   const prompt = fs.readFileSync(path.join(jobDir, "prompt.md"), "utf8");
   const log = fs.openSync(path.join(jobDir, "gen.log"), "a");
-  const child = spawn("claude", ["-p", prompt, ...settings.claudeArgs], {
+  const child = spawn(claudeBin(), ["-p", prompt, ...settings.claudeArgs], {
     cwd: jobDir,
     stdio: ["ignore", log, log],
-    env: process.env,
+    env: { ...process.env, PATH: [process.env.PATH, path.join(os.homedir(), ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"].join(":") },
   });
   child.on("error", (e) => {
     fs.writeFileSync(path.join(jobDir, "error.txt"), "Could not launch claude CLI: " + e.message);
