@@ -1,0 +1,117 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Fig — generating (animation demo)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  body {
+    font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+    font-weight: 300;
+    background: #fafaf8;
+    color: #1a1a1a;
+    max-width: 640px;
+    margin: 48px auto 0;
+    padding: 0 24px;
+    line-height: 1.7;
+    text-align: center;
+  }
+  h1 { font-size: 20px; font-weight: 400; margin: 8px 0 4px; }
+  .muted { color: #4a4a46; font-size: 14px; margin: 0; }
+  .scene { width: 340px; height: 340px; margin: 0 auto; }
+
+  /* One shared 12s cycle: the branch draws in over the first third, leaves
+     and figs pop as growth passes them, everything holds with a gentle sway,
+     then the scene breathes out and regrows. */
+  .grow { animation: cycle 12s cubic-bezier(0.32, 0.72, 0, 1) infinite; }
+  @keyframes cycle {
+    0%, 96% { opacity: 1; }
+    99% { opacity: 0; }
+    100% { opacity: 1; }
+  }
+  .sway {
+    transform-origin: 60px 300px;
+    animation: sway 6s ease-in-out infinite alternate;
+  }
+  @keyframes sway {
+    from { transform: rotate(-0.8deg); }
+    to { transform: rotate(1.2deg); }
+  }
+  .branch, .twig {
+    fill: none;
+    stroke: #2C9F28;
+    stroke-linecap: round;
+    stroke-dasharray: 1;
+    stroke-dashoffset: 0;
+  }
+  .branch { stroke-width: 7; animation: draw-branch 12s linear infinite; }
+  .twig { stroke-width: 4; }
+  @keyframes draw-branch {
+    0% { stroke-dashoffset: 1; }
+    32% { stroke-dashoffset: 0; }
+    100% { stroke-dashoffset: 0; }
+  }
+  .t1 { animation: draw-t1 12s linear infinite; }
+  @keyframes draw-t1 { 0%, 10% { stroke-dashoffset: 1; } 18% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 0; } }
+  .t2 { animation: draw-t2 12s linear infinite; }
+  @keyframes draw-t2 { 0%, 18% { stroke-dashoffset: 1; } 26% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 0; } }
+  .t3 { animation: draw-t3 12s linear infinite; }
+  @keyframes draw-t3 { 0%, 26% { stroke-dashoffset: 1; } 34% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 0; } }
+
+  .pop {
+    fill: #2C9F28;
+    transform-box: fill-box;
+    transform-origin: 50% 100%;
+  }
+  .p1 { animation: pop1 12s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+  @keyframes pop1 { 0%, 14% { transform: scale(0); } 20% { transform: scale(1.12); } 23%, 100% { transform: scale(1); } }
+  .p2 { animation: pop2 12s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+  @keyframes pop2 { 0%, 21% { transform: scale(0); } 27% { transform: scale(1.12); } 30%, 100% { transform: scale(1); } }
+  .p3 { animation: pop3 12s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+  @keyframes pop3 { 0%, 28% { transform: scale(0); } 34% { transform: scale(1.12); } 37%, 100% { transform: scale(1); } }
+  .p4 { animation: pop4 12s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+  @keyframes pop4 { 0%, 34% { transform: scale(0); } 40% { transform: scale(1.12); } 43%, 100% { transform: scale(1); } }
+  .p5 { animation: pop5 12s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+  @keyframes pop5 { 0%, 39% { transform: scale(0); } 45% { transform: scale(1.12); } 48%, 100% { transform: scale(1); } }
+
+  .dots span {
+    display: inline-block;
+    animation: dot 1.8s ease-in-out infinite;
+  }
+  .dots span:nth-child(2) { animation-delay: 0.3s; }
+  .dots span:nth-child(3) { animation-delay: 0.6s; }
+  @keyframes dot { 0%, 60%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
+
+  .calm {
+    position: fixed; right: 16px; bottom: 12px;
+    font-size: 11px; color: #9a9790; background: none; border: none;
+    font-family: inherit; cursor: pointer; text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+  html.paused * { animation-play-state: paused !important; }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; }
+  }
+</style></head>
+<body>
+  <svg class="scene" viewBox="0 0 400 400" aria-hidden="true">
+    <g class="grow">
+      <g class="sway">
+        <!-- main branch, bottom-left growing up-right -->
+        <path class="branch" pathLength="1"
+          d="M 60 352 C 110 330, 150 296, 186 254 S 258 158, 330 108"/>
+        <!-- twigs -->
+        <path class="twig t1" pathLength="1" d="M 148 300 C 132 284, 122 266, 120 246"/>
+        <path class="twig t2" pathLength="1" d="M 210 224 C 226 216, 246 214, 264 220"/>
+        <path class="twig t3" pathLength="1" d="M 282 148 C 272 130, 268 112, 270 94"/>
+        <!-- leaves (slim ellipses) and figs (round ellipses, like the badge fruit) -->
+        <g class="pop p1"><ellipse cx="120" cy="234" rx="8" ry="17" transform="rotate(-24 120 234)"/></g>
+        <g class="pop p2"><ellipse cx="176" cy="262" rx="13" ry="18" transform="rotate(9 176 262)"/></g>
+        <g class="pop p3"><ellipse cx="274" cy="226" rx="13" ry="18" transform="rotate(12 274 226)"/></g>
+        <g class="pop p4"><ellipse cx="272" cy="82" rx="8" ry="17" transform="rotate(20 272 82)"/></g>
+        <g class="pop p5"><ellipse cx="338" cy="96" rx="14" ry="19" transform="rotate(7 338 96)"/></g>
+      </g>
+    </g>
+  </svg>
+  <h1>Fig is generating<span class="dots"><span>.</span><span>.</span><span>.</span></span></h1>
+  <p class="muted">Applying the markings to the page. This page refreshes itself.</p>
+  <button class="calm" onclick="document.documentElement.classList.toggle('paused')">Pause</button>
+</body></html>
