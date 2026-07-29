@@ -12,7 +12,7 @@
   // guard would keep running stale code forever. On a version mismatch,
   // tear the old overlay down (its toggle detaches its own listeners) and
   // let this file rebuild fresh.
-  const FIG_VERSION = 5;
+  const FIG_VERSION = 6;
   if (window.__figToggle && window.__figVersion !== FIG_VERSION) {
     if (document.querySelector(".fig-toolbar")) { try { window.__figToggle(); } catch { /* stale */ } }
     window.__figToggle = null;
@@ -278,9 +278,170 @@
   const onMouseDown = (e) => {
     if (!state.on || state.mode !== "highlight") return;
     if (e.target && e.target.closest && e.target.closest("[data-fig-ui]")) return;
+    clearHlPreview();
     hlDown = { x: e.clientX, y: e.clientY };
     e.stopPropagation();
   };
+
+  // ---- PDF-mode precision selection -------------------------------------
+  // caretRangeFromPoint is too coarse over a PDF.js text layer: endpoints
+  // between glyphs snap to container corners (selecting huge swaths) and
+  // tiny drags snap to one caret (selecting nothing). So in the viewer,
+  // selection is computed geometrically against the text-layer spans:
+  // per-character offsets via binary search on real glyph rects, line-banded
+  // span collection for multi-line drags, and word-snap for near-clicks.
+
+  const charIndexAt = (node, x) => {
+    const r = document.createRange();
+    let lo = 0, hi = node.data.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      r.setStart(node, mid);
+      r.setEnd(node, mid + 1);
+      const cr = r.getBoundingClientRect();
+      if ((cr.left + cr.right) / 2 <= x) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+  };
+
+  // All text nodes of a span (a span that already holds a <mark> has several).
+  const spanTextNodes = (span) => {
+    const walker = document.createTreeWalker(span, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    while (walker.nextNode()) {
+      if (walker.currentNode.data.trim()) nodes.push(walker.currentNode);
+    }
+    return nodes;
+  };
+
+  const nodeRect = (node) => {
+    const r = document.createRange();
+    r.selectNodeContents(node);
+    return r.getBoundingClientRect();
+  };
+
+  const pdfPieces = (x1, y1, x2, y2) => {
+    let a = { x: x1, y: y1 }, b = { x: x2, y: y2 };
+    if (b.y < a.y - 4 || (Math.abs(b.y - a.y) <= 4 && b.x < a.x)) { const t = a; a = b; b = t; }
+    const out = [];
+    for (const span of document.querySelectorAll(".fig-pdf-page .textLayer span")) {
+      for (const node of spanTextNodes(span)) {
+        const r = nodeRect(node);
+        if (!r.width || r.bottom < a.y || r.top > b.y) continue;
+        const onStartLine = a.y >= r.top && a.y <= r.bottom;
+        const onEndLine = b.y >= r.top && b.y <= r.bottom;
+        if (onStartLine && r.right < a.x) continue;
+        if (onEndLine && r.left > b.x) continue;
+        let start = 0, end = node.data.length;
+        if (onStartLine) start = charIndexAt(node, a.x);
+        if (onEndLine) end = charIndexAt(node, b.x);
+        if (start >= end) continue;
+        out.push({ span, node, start, end, top: r.top, left: r.left });
+      }
+    }
+    out.sort((p, q) => (Math.abs(p.top - q.top) > 4 ? p.top - q.top : p.left - q.left));
+    return out;
+  };
+
+  const wordPieceAt = (x, y) => {
+    const el = document.elementFromPoint(x, y);
+    const span = el && el.closest ? el.closest(".textLayer span") : null;
+    if (!span) return [];
+    const node = spanTextNodes(span).find((n) => {
+      const r = nodeRect(n);
+      return x >= r.left - 2 && x <= r.right + 2;
+    });
+    if (!node) return [];
+    const s = node.data;
+    let i = Math.min(charIndexAt(node, x), s.length - 1);
+    // A click can land on a space (letter-spaced text is half spaces):
+    // snap to the nearest non-space neighbor instead of giving up.
+    if (!/\S/.test(s[i] || "")) {
+      if (i > 0 && /\S/.test(s[i - 1])) i -= 1;
+      else if (i < s.length - 1 && /\S/.test(s[i + 1])) i += 1;
+      else return [];
+    }
+    let st = i, en = i;
+    while (st > 0 && /\S/.test(s[st - 1])) st--;
+    while (en < s.length && /\S/.test(s[en])) en++;
+    const r = nodeRect(node);
+    return [{ span, node, start: st, end: en, top: r.top, left: r.left }];
+  };
+
+  const wrapPiece = (node, start, end, id) => {
+    const r = document.createRange();
+    r.setStart(node, start);
+    r.setEnd(node, end);
+    const mark = document.createElement("mark");
+    mark.setAttribute("data-fig-highlight", String(id));
+    try { r.surroundContents(mark); return mark; } catch { return null; }
+  };
+
+  // Live emerald preview while dragging, so the selection is visible even
+  // though the text layer itself is transparent.
+  let hlPreviewEl = null, hlRaf = 0;
+  const clearHlPreview = () => {
+    if (hlRaf) { cancelAnimationFrame(hlRaf); hlRaf = 0; }
+    if (hlPreviewEl) { hlPreviewEl.remove(); hlPreviewEl = null; }
+  };
+  const renderHlPreview = (x, y) => {
+    if (hlPreviewEl) hlPreviewEl.remove();
+    const box = document.createElement("div");
+    box.setAttribute("data-fig-ui", "1");
+    box.style.cssText = "position:absolute;left:0;top:0;pointer-events:none;z-index:2147483643;";
+    const pieces = pdfPieces(hlDown.x, hlDown.y, x, y);
+    const r = document.createRange();
+    for (const p of pieces) {
+      r.setStart(p.node, p.start);
+      r.setEnd(p.node, p.end);
+      for (const cr of r.getClientRects()) {
+        const d = document.createElement("div");
+        d.style.cssText = "position:absolute;background:rgba(44,159,40,.28);"
+          + `left:${window.scrollX + cr.left}px;top:${window.scrollY + cr.top}px;`
+          + `width:${cr.width}px;height:${cr.height}px;`;
+        box.appendChild(d);
+      }
+    }
+    document.body.appendChild(box);
+    hlPreviewEl = box;
+  };
+  const onHlMouseMove = (e) => {
+    if (!state.on || state.mode !== "highlight" || !hlDown || !window.__figPDF) return;
+    if (hlRaf) return;
+    const x = e.clientX, y = e.clientY;
+    hlRaf = requestAnimationFrame(() => { hlRaf = 0; if (hlDown) renderHlPreview(x, y); });
+  };
+
+  const pdfHighlightFromDrag = (x2, y2) => {
+    if (!hlDown) return;
+    let pieces = pdfPieces(hlDown.x, hlDown.y, x2, y2);
+    if (!pieces.length && Math.hypot(x2 - hlDown.x, y2 - hlDown.y) < 6) {
+      pieces = wordPieceAt(x2, y2);
+    }
+    if (!pieces.length) return;
+    const text = pieces.map((p) => p.node.data.slice(p.start, p.end)).join(" ").replace(/\s+/g, " ").trim();
+    if (!text) return;
+    const id = nextId++;
+    const marks = [];
+    for (const p of pieces) {
+      const m = wrapPiece(p.node, p.start, p.end, id);
+      if (m) marks.push(m);
+    }
+    const sel = window.getSelection();
+    if (sel) sel.removeAllRanges();
+    const firstSpan = pieces[0].span;
+    const pageEl = firstSpan.closest(".fig-pdf-page");
+    const h = {
+      id, text: text.slice(0, 500), note: "", targetPath: cssPath(firstSpan),
+      ...(pageEl ? { page: Number(pageEl.dataset.page) } : {}),
+    };
+    state.highlights.push(h);
+    const anchor = (marks[marks.length - 1] || firstSpan).getBoundingClientRect();
+    openNote(window.scrollX + anchor.left, window.scrollY + anchor.bottom, (note) => {
+      h.note = note;
+    });
+  };
+  // ------------------------------------------------------------------------
 
   const caretAt = (x, y) => {
     if (document.caretRangeFromPoint) return document.caretRangeFromPoint(x, y);
@@ -315,6 +476,12 @@
     if (!state.on || state.mode !== "highlight") return;
     if (e.target && e.target.closest && e.target.closest("[data-fig-ui]")) return;
     e.stopPropagation();
+    if (window.__figPDF) {
+      clearHlPreview();
+      pdfHighlightFromDrag(e.clientX, e.clientY);
+      hlDown = null;
+      return;
+    }
     const sel = window.getSelection();
     let range = sel && !sel.isCollapsed && sel.rangeCount ? sel.getRangeAt(0) : null;
     if (!range) range = rangeFromDrag(e.clientX, e.clientY);
@@ -633,6 +800,7 @@
     initCanvas();
     document.addEventListener("click", onPageClick, true);
     document.addEventListener("mousedown", onMouseDown, true);
+    document.addEventListener("mousemove", onHlMouseMove, true);
     document.addEventListener("mouseup", onMouseUp, true);
     const ver = (() => { try { return chrome.runtime.getManifest().version; } catch { return ""; } })();
     toast("Fig " + ver + " on — Draw, Comment, or Suggest, then press Fig");
@@ -644,7 +812,10 @@
     document.body.classList.remove("fig-mode-comment", "fig-mode-highlight", "fig-mode-draw");
     document.removeEventListener("click", onPageClick, true);
     document.removeEventListener("mousedown", onMouseDown, true);
+    document.removeEventListener("mousemove", onHlMouseMove, true);
     document.removeEventListener("mouseup", onMouseUp, true);
+    clearHlPreview();
+    hlDown = null;
     closeNote();
     for (const el of document.querySelectorAll("[data-fig-ui]")) el.remove();
     document.querySelectorAll("mark[data-fig-highlight]").forEach((m) => m.replaceWith(...m.childNodes));
