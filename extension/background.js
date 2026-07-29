@@ -43,11 +43,23 @@ async function openPdfViewer(tab) {
 }
 
 async function toggleFig(tab) {
-  if (!tab || !tab.id || !/^(https?|file):/.test(tab.url || "")) return;
-  if (isPdfUrl(tab.url)) { await openPdfViewer(tab); return; }
-  await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["fig-overlay.css"] });
-  await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["fig-overlay.js"] });
-  // fig-overlay.js defines window.__figToggle and calls it on (re)injection.
+  if (!tab || !tab.id) return;
+  // No URL pre-guard: the url is invisible without host access (empty string
+  // on some schemes), and a pre-guard turns that into a silent no-op. Try
+  // the injection on ANYTHING; if the browser forbids it (chrome:// pages,
+  // the Web Store, other extensions), say so on the badge instead of
+  // failing silently.
+  if (tab.url && isPdfUrl(tab.url)) { await openPdfViewer(tab); return; }
+  try {
+    await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["fig-overlay.css"] });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["fig-overlay.js"] });
+    // fig-overlay.js defines window.__figToggle and calls it on (re)injection.
+    chrome.action.setBadgeText({ tabId: tab.id, text: "" });
+  } catch (e) {
+    chrome.action.setBadgeText({ tabId: tab.id, text: "!" });
+    chrome.action.setBadgeBackgroundColor({ color: "#8a3b2e" });
+    chrome.action.setTitle({ tabId: tab.id, title: "Fig can't run on this page: " + ((e && e.message) || e) });
+  }
 }
 
 chrome.action.onClicked.addListener((tab) => toggleFig(tab));

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Fig",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Annotate any page, press Fig, and a revised page is generated from your markings.",
   "permissions": [
     "activeTab",
@@ -9,7 +9,8 @@
     "storage"
   ],
   "host_permissions": [
-    "http://127.0.0.1:41414/*"
+    "http://127.0.0.1:41414/*",
+    "file:///*"
   ],
   "background": {
     "service_worker": "background.js"
