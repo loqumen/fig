@@ -175,6 +175,32 @@ function deployToVercel(jobDir, settings) {
   }
 }
 
+// Strip any change-log widget already IN the content: marked blocks from
+// re-serving, and legacy unmarked ones that rode along in a snapshot of a
+// served page (Fig run on a Fig result — the widget predated its
+// data-fig-ui tag, so the serializer captured it, minus its script). The
+// legacy block is nested divs with no reliable tail, so walk to the
+// balanced close instead of regexing.
+function stripChangelogBlocks(html) {
+  html = html.replace(/<!--fig-changelog-start-->[\s\S]*?<!--fig-changelog-end-->/g, "");
+  for (;;) {
+    const i = html.indexOf('<div id="fig-changelog"');
+    if (i === -1) break;
+    const re = /<div\b|<\/div>/g;
+    re.lastIndex = i;
+    let depth = 0, end = -1, m;
+    while ((m = re.exec(html))) {
+      depth += m[0] === "</div>" ? -1 : 1;
+      if (depth === 0) { end = re.lastIndex; break; }
+    }
+    if (end === -1) break;
+    const tail = html.slice(end, end + 400).match(/^\s*<script>[\s\S]*?<\/script>/);
+    if (tail) end += tail[0].length;
+    html = html.slice(0, i) + html.slice(end);
+  }
+  return html;
+}
+
 // Revealable change log, injected at serve/deploy time so edited.html stays
 // clean (the PDF export reads the raw file and never carries the widget).
 // Hidden by default; a small pill toggles it.
@@ -195,14 +221,17 @@ function injectChangelog(jobDir, html) {
       </span>
     </li>`).join("");
   const widget = `
-<div id="fig-changelog" style="position:fixed;left:24px;bottom:24px;z-index:2147483000;font-family:'DM Sans',-apple-system,system-ui,sans-serif;font-size:13px;line-height:1.5;">
+<!--fig-changelog-start-->
+<div id="fig-changelog" data-fig-ui="1" style="position:fixed;left:24px;bottom:24px;z-index:2147483000;font-family:'DM Sans',-apple-system,system-ui,sans-serif;font-size:13px;line-height:1.5;">
   <div id="fig-changelog-panel" style="display:none;width:340px;max-height:55vh;overflow:auto;background:#fafaf8;color:#1a1a1a;border:1px solid #e8e6e1;border-radius:12px;box-shadow:0 6px 24px rgba(26,26,26,.18);padding:14px 16px;margin:0 0 10px;">
     <div style="font-weight:500;margin-bottom:2px;">What changed</div>
     <ul style="list-style:none;margin:0;padding:0;">${rows}</ul>
   </div>
   <button id="fig-changelog-btn" type="button" style="border:none;cursor:pointer;background:#2C9F28;color:#fafaf8;border-radius:999px;padding:9px 16px;font-family:inherit;font-size:13px;box-shadow:0 4px 16px rgba(26,26,26,.2);">Changes · ${items.length}</button>
 </div>
-<script>document.getElementById("fig-changelog-btn").addEventListener("click",function(){var p=document.getElementById("fig-changelog-panel");p.style.display=p.style.display==="none"?"block":"none";});</script>`;
+<script>(function(){var b=[...document.querySelectorAll("#fig-changelog-btn")].pop(),p=[...document.querySelectorAll("#fig-changelog-panel")].pop();b.addEventListener("click",function(){p.style.display=p.style.display==="none"?"block":"none";});})();</script>
+<!--fig-changelog-end-->`;
+  html = stripChangelogBlocks(html);
   return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, widget + "\n</body>") : html + widget;
 }
 

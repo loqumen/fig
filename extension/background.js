@@ -43,7 +43,7 @@ async function openPdfViewer(tab) {
 }
 
 async function toggleFig(tab) {
-  if (!tab || !tab.id || !/^https?:/.test(tab.url || "")) return;
+  if (!tab || !tab.id || !/^(https?|file):/.test(tab.url || "")) return;
   if (isPdfUrl(tab.url)) { await openPdfViewer(tab); return; }
   await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["fig-overlay.css"] });
   await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["fig-overlay.js"] });
