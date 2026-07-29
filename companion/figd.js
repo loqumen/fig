@@ -211,14 +211,35 @@ function readBody(req, limit) {
   });
 }
 
+// The extension's service worker POSTs with a custom X-Fig-Token header,
+// which makes the browser send a CORS preflight first. Without these
+// headers the preflight 404s and every dispatch fails as "not reachable".
+// Loopback-only + token-gated, so reflecting extension origins is safe.
+function corsHeaders(req) {
+  const origin = req.headers.origin || "";
+  if (!origin.startsWith("chrome-extension://")) return {};
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, X-Fig-Token",
+    "Access-Control-Max-Age": "600",
+  };
+}
+
 const server = http.createServer(async (req, res) => {
   const settings = loadSettings();
   const url = new URL(req.url, "http://127.0.0.1");
 
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, corsHeaders(req));
+    res.end();
+    return;
+  }
+
   // Dispatch endpoint (extension only, token-gated).
   if (req.method === "POST" && url.pathname === "/fig") {
     if (req.headers["x-fig-token"] !== settings.token) {
-      res.writeHead(403, { "Content-Type": "application/json" });
+      res.writeHead(403, { "Content-Type": "application/json", ...corsHeaders(req) });
       res.end(JSON.stringify({ error: "bad token — paste the token from ~/.fig/settings.json into the extension popup" }));
       return;
     }
@@ -226,7 +247,7 @@ const server = http.createServer(async (req, res) => {
     try {
       payload = JSON.parse(await readBody(req, 50 * 1024 * 1024));
     } catch (e) {
-      res.writeHead(400, { "Content-Type": "application/json" });
+      res.writeHead(400, { "Content-Type": "application/json", ...corsHeaders(req) });
       res.end(JSON.stringify({ error: String(e.message || e) }));
       return;
     }
@@ -242,7 +263,7 @@ const server = http.createServer(async (req, res) => {
     fs.writeFileSync(path.join(jobDir, "annotations.json"), JSON.stringify(meta, null, 2));
     fs.writeFileSync(path.join(jobDir, "prompt.md"), buildPrompt(slug, payload));
     runGeneration(jobDir, settings);
-    res.writeHead(200, { "Content-Type": "application/json" });
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders(req) });
     res.end(JSON.stringify({ job: slug, statusUrl: `http://127.0.0.1:${PORT}/jobs/${slug}/` }));
     return;
   }
@@ -319,6 +340,6 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, "127.0.0.1", () => {
   const settings = loadSettings();
   console.log(`figd listening on http://127.0.0.1:${PORT}`);
-  console.log(`extension token (paste into the Fig popup once): ${settings.token}`);
+  console.log("extension token: in ~/.fig/settings.json (never logged) — paste it into the Fig popup once");
   console.log(`spawn target: ${settings.target} (edit ${SETTINGS_PATH})`);
 });
