@@ -17,36 +17,40 @@ function b64ToBytes(b64) {
   return bytes;
 }
 
-// Returns the number of text spans actually produced, so the caller can
-// detect a dead text layer (which silently kills the highlight tool).
+// Builds the selectable text layer OURSELVES, calibrated to the PDF's own
+// geometry. PDF.js's TextLayer sizes spans from font metrics (measureText),
+// which drift from the painted glyphs on some machines (Brave farbles text
+// metrics under fingerprint protection) — the layer LOOKS fine (transparent)
+// but every span sits offset/compressed vs the visible text, so precise
+// highlighting misses. Instead: place each span at the item's transform
+// origin, then scaleX it so its measured width EQUALS the item's width from
+// the PDF (item.width × viewport.scale) — alignment with the canvas glyphs
+// by construction, immune to font metrics. Returns the span count.
 async function renderTextLayer(page, viewport, container) {
-  try {
-    if (pdfjsLib.TextLayer) {
-      const layer = new pdfjsLib.TextLayer({
-        textContentSource: page.streamTextContent(),
-        container,
-        viewport,
-      });
-      await layer.render();
-    }
-  } catch { /* fall through to manual layer */ }
-  if (!container.querySelector("span")) {
-    // Manual fallback: absolutely positioned transparent spans per text item.
-    const tc = await page.getTextContent();
-    for (const item of tc.items) {
-      if (!item.str || !item.str.trim()) continue;
-      const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
-      const fontHeight = Math.hypot(tx[2], tx[3]);
-      const span = document.createElement("span");
-      span.textContent = item.str;
-      span.style.left = tx[4] + "px";
-      span.style.top = tx[5] - fontHeight + "px";
-      span.style.fontSize = fontHeight + "px";
-      span.style.fontFamily = "sans-serif";
-      container.appendChild(span);
-    }
+  const tc = await page.getTextContent();
+  const placed = [];
+  for (const item of tc.items) {
+    if (!item.str || !item.str.trim()) continue;
+    const tx = pdfjsLib.Util.transform(viewport.transform, item.transform);
+    const fontHeight = Math.hypot(tx[2], tx[3]);
+    if (!fontHeight) continue;
+    const span = document.createElement("span");
+    span.textContent = item.str;
+    span.style.left = tx[4] + "px";
+    span.style.top = tx[5] - fontHeight + "px";
+    span.style.fontSize = fontHeight + "px";
+    span.style.fontFamily = "sans-serif";
+    container.appendChild(span);
+    placed.push({ span, expected: item.width * viewport.scale });
   }
-  return container.querySelectorAll("span").length;
+  // Batch-read natural widths, then batch-write scaleX (avoids layout thrash).
+  const widths = placed.map(({ span }) => span.getBoundingClientRect().width);
+  placed.forEach(({ span, expected }, i) => {
+    if (widths[i] > 0 && expected > 0) {
+      span.style.transform = `scaleX(${expected / widths[i]})`;
+    }
+  });
+  return placed.length;
 }
 
 async function main() {
