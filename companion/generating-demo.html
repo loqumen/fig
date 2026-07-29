@@ -18,22 +18,23 @@
   .muted { color: #4a4a46; font-size: 14px; margin: 0; }
   .scene { width: 340px; height: 340px; margin: 0 auto; }
 
-  /* One shared 12s cycle: the branch draws in over the first third, leaves
-     and figs pop as growth passes them, everything holds with a gentle sway,
-     then the scene breathes out and regrows. */
-  .grow { animation: cycle 12s cubic-bezier(0.32, 0.72, 0, 1) infinite; }
+  /* One shared 10s cycle: growth finishes at 6.4s (64%), the grown branch
+     holds for 3s (64% to 94%), then a short breath out and the cycle
+     restarts. Every child animation lives on the same 10s clock. */
+  .grow { animation: cycle 10s linear infinite; }
   @keyframes cycle {
-    0%, 96% { opacity: 1; }
-    99% { opacity: 0; }
+    0%, 94% { opacity: 1; }
+    98% { opacity: 0; }
+    99.9% { opacity: 0; }
     100% { opacity: 1; }
   }
   .sway {
     transform-origin: 60px 300px;
-    animation: sway 6s ease-in-out infinite alternate;
+    animation: sway 5s ease-in-out infinite alternate;
   }
   @keyframes sway {
-    from { transform: rotate(-0.8deg); }
-    to { transform: rotate(1.2deg); }
+    from { transform: rotate(-0.7deg); }
+    to { transform: rotate(1deg); }
   }
   .branch, .twig {
     fill: none;
@@ -42,35 +43,52 @@
     stroke-dasharray: 1;
     stroke-dashoffset: 0;
   }
-  .branch { stroke-width: 7; animation: draw-branch 12s linear infinite; }
+  .branch { stroke-width: 7; animation: draw-branch 10s linear infinite; }
   .twig { stroke-width: 4; }
   @keyframes draw-branch {
     0% { stroke-dashoffset: 1; }
     32% { stroke-dashoffset: 0; }
     100% { stroke-dashoffset: 0; }
   }
-  .t1 { animation: draw-t1 12s linear infinite; }
-  @keyframes draw-t1 { 0%, 10% { stroke-dashoffset: 1; } 18% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 0; } }
-  .t2 { animation: draw-t2 12s linear infinite; }
-  @keyframes draw-t2 { 0%, 18% { stroke-dashoffset: 1; } 26% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 0; } }
-  .t3 { animation: draw-t3 12s linear infinite; }
-  @keyframes draw-t3 { 0%, 26% { stroke-dashoffset: 1; } 34% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 0; } }
+  /* Round line-caps paint a dot at an undrawn dashed path's start, so every
+     twig stays fully hidden until the moment its own growth begins. */
+  .t1 { animation: draw-t1 10s linear infinite; }
+  @keyframes draw-t1 {
+    0%, 11.9% { stroke-dashoffset: 1; opacity: 0; }
+    12% { stroke-dashoffset: 1; opacity: 1; }
+    22% { stroke-dashoffset: 0; opacity: 1; }
+    100% { stroke-dashoffset: 0; opacity: 1; }
+  }
+  .t2 { animation: draw-t2 10s linear infinite; }
+  @keyframes draw-t2 {
+    0%, 21.9% { stroke-dashoffset: 1; opacity: 0; }
+    22% { stroke-dashoffset: 1; opacity: 1; }
+    32% { stroke-dashoffset: 0; opacity: 1; }
+    100% { stroke-dashoffset: 0; opacity: 1; }
+  }
+  .t3 { animation: draw-t3 10s linear infinite; }
+  @keyframes draw-t3 {
+    0%, 29.9% { stroke-dashoffset: 1; opacity: 0; }
+    30% { stroke-dashoffset: 1; opacity: 1; }
+    40% { stroke-dashoffset: 0; opacity: 1; }
+    100% { stroke-dashoffset: 0; opacity: 1; }
+  }
 
   .pop {
     fill: #2C9F28;
     transform-box: fill-box;
     transform-origin: 50% 100%;
   }
-  .p1 { animation: pop1 12s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
-  @keyframes pop1 { 0%, 14% { transform: scale(0); } 20% { transform: scale(1.12); } 23%, 100% { transform: scale(1); } }
-  .p2 { animation: pop2 12s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
-  @keyframes pop2 { 0%, 21% { transform: scale(0); } 27% { transform: scale(1.12); } 30%, 100% { transform: scale(1); } }
-  .p3 { animation: pop3 12s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
-  @keyframes pop3 { 0%, 28% { transform: scale(0); } 34% { transform: scale(1.12); } 37%, 100% { transform: scale(1); } }
-  .p4 { animation: pop4 12s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
-  @keyframes pop4 { 0%, 34% { transform: scale(0); } 40% { transform: scale(1.12); } 43%, 100% { transform: scale(1); } }
-  .p5 { animation: pop5 12s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
-  @keyframes pop5 { 0%, 39% { transform: scale(0); } 45% { transform: scale(1.12); } 48%, 100% { transform: scale(1); } }
+  .p1 { animation: pop1 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+  @keyframes pop1 { 0%, 24% { transform: scale(0); } 30% { transform: scale(1.1); } 33%, 100% { transform: scale(1); } }
+  .p2 { animation: pop2 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+  @keyframes pop2 { 0%, 32% { transform: scale(0); } 38% { transform: scale(1.1); } 41%, 100% { transform: scale(1); } }
+  .p3 { animation: pop3 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+  @keyframes pop3 { 0%, 40% { transform: scale(0); } 46% { transform: scale(1.1); } 49%, 100% { transform: scale(1); } }
+  .p4 { animation: pop4 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+  @keyframes pop4 { 0%, 48% { transform: scale(0); } 54% { transform: scale(1.1); } 57%, 100% { transform: scale(1); } }
+  .p5 { animation: pop5 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+  @keyframes pop5 { 0%, 56% { transform: scale(0); } 62% { transform: scale(1.1); } 64%, 100% { transform: scale(1); } }
 
   .dots span {
     display: inline-block;
@@ -93,21 +111,27 @@
 </style></head>
 <body>
   <svg class="scene" viewBox="0 0 400 400" aria-hidden="true">
+    <defs>
+      <!-- The real badge leaf (mark/fig-badge.svg), verbatim. Its bounding
+           box is x 254.7-356.6, y 275.1-383.4; uses place its bottom-center
+           (305.7, 380) at each attachment point. -->
+      <path id="figleaf" d="M 288.20 275.25 C 289.92 275.08 291.69 275.13 293.44 275.25 C 295.18 275.38 296.98 275.62 298.67 275.99 C 300.37 276.36 301.98 276.94 303.61 277.47 C 305.23 278.00 306.86 278.55 308.44 279.19 C 310.02 279.83 311.55 280.60 313.10 281.32 C 314.65 282.05 316.22 282.72 317.72 283.54 C 319.23 284.37 320.70 285.29 322.14 286.26 C 323.59 287.24 324.99 288.32 326.39 289.40 C 327.79 290.48 329.17 291.60 330.54 292.75 C 331.91 293.90 333.31 295.08 334.62 296.30 C 335.92 297.52 337.19 298.75 338.38 300.07 C 339.58 301.39 340.70 302.81 341.78 304.21 C 342.87 305.61 343.89 307.03 344.89 308.47 C 345.88 309.90 346.87 311.34 347.76 312.82 C 348.66 314.30 349.49 315.80 350.26 317.33 C 351.02 318.86 351.73 320.42 352.38 322.00 C 353.03 323.58 353.62 325.18 354.15 326.81 C 354.68 328.44 355.20 330.07 355.57 331.76 C 355.95 333.46 356.27 335.22 356.41 336.96 C 356.55 338.70 356.57 340.47 356.41 342.20 C 356.26 343.92 355.93 345.66 355.48 347.31 C 355.03 348.97 354.46 350.58 353.71 352.12 C 352.96 353.66 352.05 355.20 351.00 356.54 C 349.95 357.88 348.73 359.12 347.38 360.16 C 346.04 361.20 344.50 362.11 342.92 362.77 C 341.35 363.43 339.64 363.84 337.94 364.13 C 336.24 364.42 334.48 364.51 332.72 364.50 C 330.96 364.49 329.13 364.34 327.39 364.09 C 325.66 363.83 323.97 363.20 322.31 362.98 C 320.64 362.75 318.88 362.52 317.41 362.74 C 315.94 362.95 314.65 363.41 313.47 364.28 C 312.29 365.16 311.33 366.65 310.33 367.99 C 309.33 369.34 308.50 370.94 307.46 372.35 C 306.41 373.76 305.31 375.21 304.04 376.45 C 302.78 377.68 301.33 378.81 299.87 379.76 C 298.42 380.71 296.92 381.56 295.31 382.14 C 293.71 382.72 291.95 383.07 290.23 383.25 C 288.51 383.44 286.71 383.44 284.99 383.25 C 283.27 383.07 281.52 382.72 279.91 382.14 C 278.29 381.57 276.79 380.75 275.32 379.82 C 273.86 378.89 272.44 377.76 271.13 376.56 C 269.81 375.36 268.57 373.99 267.43 372.63 C 266.29 371.26 265.21 369.85 264.29 368.38 C 263.38 366.91 262.67 365.36 261.94 363.81 C 261.22 362.26 260.55 360.69 259.96 359.09 C 259.37 357.48 258.89 355.83 258.39 354.19 C 257.89 352.55 257.40 350.91 256.98 349.23 C 256.55 347.56 256.17 345.87 255.87 344.15 C 255.56 342.43 255.31 340.68 255.13 338.91 C 254.94 337.14 254.82 335.34 254.76 333.52 C 254.69 331.70 254.69 329.80 254.76 327.97 C 254.82 326.15 254.94 324.35 255.13 322.58 C 255.31 320.81 255.56 319.07 255.87 317.34 C 256.17 315.62 256.58 313.95 256.98 312.26 C 257.37 310.57 257.76 308.89 258.21 307.23 C 258.66 305.57 259.14 303.91 259.69 302.30 C 260.24 300.68 260.84 299.07 261.54 297.52 C 262.24 295.96 263.04 294.44 263.89 292.95 C 264.75 291.45 265.65 289.98 266.67 288.55 C 267.70 287.13 268.83 285.69 270.03 284.42 C 271.24 283.14 272.53 281.96 273.91 280.91 C 275.29 279.87 276.78 278.92 278.31 278.15 C 279.84 277.38 281.44 276.78 283.09 276.30 C 284.73 275.82 286.47 275.43 288.20 275.25 Z"/>
+    </defs>
     <g class="grow">
       <g class="sway">
         <!-- main branch, bottom-left growing up-right -->
         <path class="branch" pathLength="1"
           d="M 60 352 C 110 330, 150 296, 186 254 S 258 158, 330 108"/>
-        <!-- twigs -->
-        <path class="twig t1" pathLength="1" d="M 148 300 C 132 284, 122 266, 120 246"/>
-        <path class="twig t2" pathLength="1" d="M 210 224 C 226 216, 246 214, 264 220"/>
-        <path class="twig t3" pathLength="1" d="M 282 148 C 272 130, 268 112, 270 94"/>
-        <!-- leaves (slim ellipses) and figs (round ellipses, like the badge fruit) -->
-        <g class="pop p1"><ellipse cx="120" cy="234" rx="8" ry="17" transform="rotate(-24 120 234)"/></g>
-        <g class="pop p2"><ellipse cx="176" cy="262" rx="13" ry="18" transform="rotate(9 176 262)"/></g>
-        <g class="pop p3"><ellipse cx="274" cy="226" rx="13" ry="18" transform="rotate(12 274 226)"/></g>
-        <g class="pop p4"><ellipse cx="272" cy="82" rx="8" ry="17" transform="rotate(20 272 82)"/></g>
-        <g class="pop p5"><ellipse cx="338" cy="96" rx="14" ry="19" transform="rotate(7 338 96)"/></g>
+        <!-- twigs (hidden until their growth starts) -->
+        <path class="twig t1" pathLength="1" d="M 148 300 C 134 286, 124 268, 120 250"/>
+        <path class="twig t2" pathLength="1" d="M 214 220 C 230 214, 248 212, 262 216"/>
+        <path class="twig t3" pathLength="1" d="M 282 148 C 274 132, 270 114, 270 100"/>
+        <!-- leaves (the real badge leaf) and figs, each based on its wood -->
+        <g class="pop p1"><use href="#figleaf" transform="translate(120,252) rotate(-44) scale(0.44) translate(-305.7,-380)"/></g>
+        <g class="pop p2"><ellipse cx="178" cy="246" rx="12" ry="17" transform="rotate(9 178 262)"/></g>
+        <g class="pop p3"><use href="#figleaf" transform="translate(263,217) rotate(48) scale(0.38) translate(-305.7,-380)"/></g>
+        <g class="pop p4"><ellipse cx="269" cy="82" rx="13" ry="18" transform="rotate(-7 269 98)"/></g>
+        <g class="pop p5"><ellipse cx="336" cy="92" rx="14" ry="19" transform="rotate(7 336 110)"/></g>
       </g>
     </g>
   </svg>
