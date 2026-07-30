@@ -75,6 +75,8 @@ function linkCloudflare() {
   copy(path.join(SCAFFOLD, "cloudflare", "schema.sql"), path.join(dir, "schema.sql"));
   fs.writeFileSync(path.join(dir, "public", "index.html"), placeholderIndex());
 
+  step("Getting the deployment tool ready (first time can take a minute)…");
+  try { npx([WRANGLER, "--version"], { cwd: dir }); } catch { /* cache warm only */ }
   step("Signing in to Cloudflare (a browser window may open)…");
   try { npx([WRANGLER, "whoami"], { cwd: dir }); }
   catch { npx([WRANGLER, "login"], { cwd: dir, stdio: ["ignore", logFd(), logFd()] }); }
@@ -129,6 +131,8 @@ function linkVercel() {
   copy(path.join(SCAFFOLD, "vercel", "package.template.json"), path.join(dir, "package.json"));
   fs.writeFileSync(path.join(dir, "public", "index.html"), placeholderIndex());
 
+  step("Getting the deployment tool ready (first time can take a minute)…");
+  try { npx([VERCEL, "--version"], { cwd: dir }); } catch { /* cache warm only */ }
   step("Signing in to Vercel (a browser window may open)…");
   try { npx([VERCEL, "whoami"], { cwd: dir }); }
   catch { npx([VERCEL, "login"], { cwd: dir, stdio: ["ignore", logFd(), logFd()] }); }

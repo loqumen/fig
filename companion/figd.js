@@ -936,7 +936,24 @@ const server = http.createServer((req, res) => {
   });
 });
 
+function prewarmClis() {
+  // Linking must never sit silent while npx cold-downloads a tool: fetch the
+  // pinned CLIs once in the background, right when the daemon starts.
+  const marker = path.join(FIG_HOME, ".cli-prewarmed-v1");
+  if (fs.existsSync(marker)) return;
+  let ok = 0, total = Object.keys(PIN).length;
+  for (const pkg of Object.values(PIN)) {
+    const c = spawn("npx", ["--yes", pkg, "--version"], {
+      detached: true, stdio: "ignore",
+      env: { ...process.env, PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].join(":") },
+    });
+    c.on("exit", (code) => { if (code === 0 && ++ok === total) fs.writeFileSync(marker, ""); });
+    c.unref();
+  }
+}
+
 server.listen(PORT, "127.0.0.1", () => {
+  prewarmClis();
   const settings = loadSettings();
   console.log(`figd listening on http://127.0.0.1:${PORT}`);
   console.log("extension token: in ~/.fig/settings.json (never logged) — paste it into the Fig popup once");
