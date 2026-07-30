@@ -20,6 +20,15 @@ const SCAFFOLD = [
   path.join(__dirname, "scaffold"),          // installed layout
 ].find((d) => fs.existsSync(d));
 
+let _logFd = null;
+function logFd() {
+  if (_logFd == null) {
+    fs.mkdirSync(FIG_HOME, { recursive: true });
+    _logFd = fs.openSync(path.join(FIG_HOME, "link.log"), "a");
+  }
+  return _logFd;
+}
+
 function state(patch) {
   let cur = {};
   try { cur = JSON.parse(fs.readFileSync(PUBLISH, "utf8")); } catch { /* first link */ }
@@ -68,7 +77,7 @@ function linkCloudflare() {
 
   step("Signing in to Cloudflare (a browser window may open)…");
   try { npx([WRANGLER, "whoami"], { cwd: dir }); }
-  catch { npx([WRANGLER, "login"], { cwd: dir, stdio: "inherit" }); }
+  catch { npx([WRANGLER, "login"], { cwd: dir, stdio: ["ignore", logFd(), logFd()] }); }
 
   step("Creating the comments database…");
   let dbId = null;
@@ -122,13 +131,13 @@ function linkVercel() {
 
   step("Signing in to Vercel (a browser window may open)…");
   try { npx([VERCEL, "whoami"], { cwd: dir }); }
-  catch { npx([VERCEL, "login"], { cwd: dir, stdio: "inherit" }); }
+  catch { npx([VERCEL, "login"], { cwd: dir, stdio: ["ignore", logFd(), logFd()] }); }
 
   step("Creating the project…");
   npx([VERCEL, "link", "--yes", "--project", "fig-review"], { cwd: dir });
 
   step("Creating the comments store…");
-  try { npx([VERCEL, "blob", "store", "add", "fig-review-store"], { cwd: dir, stdio: "inherit" }); }
+  try { npx([VERCEL, "blob", "store", "add", "fig-review-store"], { cwd: dir, stdio: ["ignore", logFd(), logFd()] }); }
   catch { /* store may already exist — the env pull below is what matters */ }
 
   step("Deploying the review site…");

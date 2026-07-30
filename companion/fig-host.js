@@ -72,19 +72,20 @@ function settingsSet(patch) {
 }
 
 function linkStart(provider) {
-  const p = provider === "vercel" ? "vercel" : "cloudflare";
-  const script = [
-    path.join(__dirname, "fig-link.js"),
-    path.join(__dirname, "..", "companion", "fig-link.js"),
-  ].find((f) => fs.existsSync(f));
-  if (!script) return { ok: false, data: { error: "fig-link.js not found" } };
-  const { spawn } = require("child_process");
-  const child = spawn(process.execPath, [script, p], {
-    detached: true, stdio: "ignore",
-    env: { ...process.env, PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].join(":") },
+  // Spawning from THIS process would inherit Chrome's provenance context —
+  // macOS then quarantines everything npx downloads and Gatekeeper blocks
+  // the CLI's binaries (the 2026-07-30 esbuild prompt). figd runs under
+  // launchd, whose children are clean, so the daemon does the spawning.
+  return new Promise((resolve) => {
+    const body = Buffer.from(JSON.stringify({ provider: provider === "vercel" ? "vercel" : "cloudflare" }));
+    const req = http.request(
+      { host: "127.0.0.1", port: PORT, path: "/link", method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": body.length, "X-Fig-Token": token() } },
+      (res) => { res.resume(); res.on("end", () => resolve({ ok: res.statusCode === 200, data: { started: provider } })); }
+    );
+    req.on("error", () => resolve({ ok: false, data: { error: "companion daemon not running" } }));
+    req.end(body);
   });
-  child.unref();
-  return { ok: true, data: { started: p } };
 }
 
 // stdin framing
@@ -99,7 +100,7 @@ process.stdin.on("data", async (chunk) => {
     if (msg && msg.type === "ping") { send({ ok: true, data: { pong: true } }); continue; }
     if (msg && msg.type === "settings-get") { send(settingsGet()); continue; }
     if (msg && msg.type === "settings-set") { send(settingsSet(msg.settings || {})); continue; }
-    if (msg && msg.type === "link-start") { send(linkStart(msg.provider)); continue; }
+    if (msg && msg.type === "link-start") { send(await linkStart(msg.provider)); continue; }
     send(await dispatch(msg && msg.payload ? msg.payload : msg));
   }
 });

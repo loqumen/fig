@@ -801,6 +801,24 @@ async function handle(req, res) {
 
 
 
+  // Link a review site (called by the native host — the daemon spawns the
+  // scaffolder so downloaded CLIs never inherit a browser provenance context).
+  if (req.method === "POST" && url.pathname === "/link") {
+    if (req.headers["x-fig-token"] !== settings.token) { res.writeHead(403); res.end(); return; }
+    let prov = "cloudflare";
+    try { prov = JSON.parse(await readBody(req, 4096)).provider === "vercel" ? "vercel" : "cloudflare"; } catch { /* default */ }
+    const script = [path.join(__dirname, "fig-link.js"), path.join(__dirname, "..", "companion", "fig-link.js")].find((f) => fs.existsSync(f));
+    if (!script) { res.writeHead(500); res.end("fig-link.js missing"); return; }
+    const child = spawn(process.execPath, [script, prov], {
+      detached: true, stdio: "ignore",
+      env: { ...process.env, PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].join(":") },
+    });
+    child.unref();
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ started: prov }));
+    return;
+  }
+
   // Job state as JSON (the status page's poll fallback).
   let m = url.pathname.match(/^\/jobs\/([a-z0-9-]+)\/state$/);
   if (m) {
