@@ -15,3 +15,5 @@ npm-debug.log*
 # build / packaging output
 dist/
 *.dmg
+signing/*.pem
+build/
