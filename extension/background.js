@@ -33,9 +33,14 @@ async function openPdfViewer(tab) {
     func: grabPdfInTab,
   });
   if (!result || result.error) {
-    console.warn("Fig: PDF grab failed:", result && result.error);
+    // Failure is always VISIBLE (product standard): badge it, never
+    // console-only.
+    chrome.action.setBadgeText({ tabId: tab.id, text: "!" });
+    chrome.action.setBadgeBackgroundColor({ color: "#8a3b2e" });
+    chrome.action.setTitle({ tabId: tab.id, title: "Fig couldn't read this PDF: " + ((result && result.error) || "no bytes returned") });
     return;
   }
+  chrome.action.setBadgeText({ tabId: tab.id, text: "" });
   const key = "figpdf-" + tab.id + "-" + Date.now();
   const name = (() => { try { return decodeURIComponent(new URL(tab.url).pathname.split("/").pop()); } catch { return "document.pdf"; } })();
   await chrome.storage.session.set({ [key]: { src: tab.url, b64: result.b64, name } });
@@ -90,15 +95,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && msg.type === "fig-dispatch") {
     (async () => {
       try {
-        const { token } = await chrome.storage.local.get("token");
-        const res = await fetch("http://127.0.0.1:41414/fig", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Fig-Token": token || "" },
-          body: JSON.stringify(msg.payload),
-        });
-        const data = await res.json();
-        sendResponse({ ok: res.ok, data });
-        if (res.ok && data.statusUrl) chrome.tabs.create({ url: data.statusUrl });
+        // Preferred path: the native host. The browser only lets the extension
+        // IDs named in the host manifest speak to it, so no token is needed and
+        // the user never pastes one. Falls back to the old localhost+token path
+        // when the host is not installed, so existing setups keep working.
+        let out = await sendNative(msg.payload);
+        if (!out) out = await sendLocalHttp(msg.payload);
+        sendResponse(out);
+        if (out.ok && out.data && out.data.statusUrl) {
+          chrome.tabs.create({ url: out.data.statusUrl });
+        }
       } catch (e) {
         sendResponse({ ok: false, error: String(e) });
       }
@@ -106,3 +112,29 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 });
+
+// --- companion transports -------------------------------------------------
+const FIG_HOST = "com.loqumen.fig";
+
+// Returns null (not an error) when the native host is unavailable, so the
+// caller can fall back rather than surfacing a confusing failure.
+function sendNative(payload) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendNativeMessage(FIG_HOST, { type: "dispatch", payload }, (resp) => {
+        if (chrome.runtime.lastError || !resp) return resolve(null);
+        resolve(resp);
+      });
+    } catch { resolve(null); }
+  });
+}
+
+async function sendLocalHttp(payload) {
+  const { token } = await chrome.storage.local.get("token");
+  const res = await fetch("http://127.0.0.1:41414/fig", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Fig-Token": token || "" },
+    body: JSON.stringify(payload),
+  });
+  return { ok: res.ok, data: await res.json() };
+}

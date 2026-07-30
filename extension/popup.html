@@ -34,15 +34,18 @@
     cursor: pointer;
   }
   .status { margin-top: 8px; color: #4a4a46; }
+  .conn { display: flex; align-items: center; gap: 6px; margin-top: 10px; color: #4a4a46; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #d4d2cc; flex: none; }
+  .dot.ok { background: #2C9F28; }
+  .dot.bad { background: #916031; }
+  .conn a { color: #1a1a1a; }
 </style>
 </head>
 <body>
   <h1>Fig</h1>
   <p>Press <b>⌥ Option+Shift+F</b> on any page to open the tools. The companion must be running locally.</p>
   <button id="open">Open Fig on this page</button>
-  <label for="token">Companion token (from ~/.fig/settings.json)</label>
-  <input id="token" type="password" autocomplete="off">
-  <button id="save">Save</button>
+  <div class="conn" id="conn"><span class="dot" id="dot"></span><span id="connText">Checking companion…</span></div>
   <div class="status" id="status"></div>
   <script src="popup.js"></script>
 </body>
