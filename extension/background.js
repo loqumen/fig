@@ -103,7 +103,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         if (!out) out = await sendLocalHttp(msg.payload);
         sendResponse(out);
         if (out.ok && out.data && out.data.statusUrl) {
-          chrome.tabs.create({ url: out.data.statusUrl });
+          openFigTab(out.data.statusUrl);
         }
       } catch (e) {
         sendResponse({ ok: false, error: String(e) });
@@ -112,6 +112,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 });
+
+
+// One Fig tab, always: every dispatch reuses the existing companion tab
+// (navigated + focused) instead of piling up a new tab per run. The
+// 127.0.0.1:41414 host permission is what lets tabs.query see the URL.
+async function openFigTab(url) {
+  try {
+    const tabs = await chrome.tabs.query({ url: "http://127.0.0.1:41414/*" });
+    if (tabs.length) {
+      await chrome.tabs.update(tabs[0].id, { url, active: true });
+      if (tabs[0].windowId != null) chrome.windows.update(tabs[0].windowId, { focused: true });
+      return;
+    }
+  } catch (e) { /* fall through to a fresh tab */ }
+  chrome.tabs.create({ url });
+}
 
 // --- companion transports -------------------------------------------------
 const FIG_HOST = "com.loqumen.fig";

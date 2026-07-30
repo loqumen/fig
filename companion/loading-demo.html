@@ -91,6 +91,40 @@
   .elapsed { color: #9a9790; font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
   .demonote { color: #9a9790; font-size: 11px; margin-top: 40px; }
 
+  /* Ready state: the branch finishes growing and STAYS — the cycle stops on
+     the complete mark — and the view button pops in. No auto-redirect. */
+  .ready .cycle { animation: none; opacity: 1; }
+  .ready .ring { animation: none; stroke-dashoffset: 0; }
+  .ready .branch { animation: none; transform: scaleX(1); }
+  .ready .fruit, .ready .leaf { animation: none; transform: scale(1); }
+  .ready .dots { display: none; }
+
+  .view-btn {
+    display: none;
+    margin: 18px auto 0;
+    background: #2C9F28;
+    color: #fafaf8;
+    border: none;
+    border-radius: 10px;
+    padding: 15px 30px;
+    font-family: inherit;
+    font-size: 17px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(44, 159, 40, 0.35);
+    transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .view-btn:hover { background: #26881f; }
+  .ready .view-btn {
+    display: block;
+    animation: btn-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  @keyframes btn-in {
+    from { opacity: 0; transform: scale(0.88) translateY(6px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
   .calm {
     position: fixed; right: 16px; bottom: 12px;
     font-size: 11px; color: #9a9790; background: none; border: none;
@@ -114,6 +148,7 @@
   <h1>Fig is generating</h1>
   <p class="status" id="status">Reading the captured page…</p>
   <p class="elapsed" id="elapsed">0:04</p>
+  <button class="view-btn" id="viewBtn">View revised page</button>
   <p class="demonote">Demo — the status line below the title is simulated here; on the real page it streams from the generation as it happens.</p>
   <button class="calm" onclick="document.documentElement.classList.toggle('paused')">Pause</button>
 <script>
@@ -129,17 +164,30 @@
     "Finishing up…"
   ];
   var i = 0;
+  var ready = false;
   var st = document.getElementById("status");
   setInterval(function () {
-    if (document.documentElement.classList.contains("paused")) return;
+    if (ready || document.documentElement.classList.contains("paused")) return;
     i = (i + 1) % FEED.length;
     st.classList.add("swap");
     setTimeout(function () { st.textContent = FEED[i]; st.classList.remove("swap"); }, 250);
   }, 3200);
 
+  // Demo: generation "finishes" at 10s. The real page flips on the SSE done
+  // event — same presentation, no auto-redirect, the button is the handoff.
+  setTimeout(function () {
+    ready = true;
+    document.body.classList.add("ready");
+    document.querySelector("h1").textContent = "Your fig is ready";
+    st.textContent = "6 changes applied. The revised page is waiting.";
+  }, 10000);
+  document.getElementById("viewBtn").addEventListener("click", function () {
+    st.textContent = "(Demo — on the real page this opens the revised page.)";
+  });
+
   var t0 = Date.now() - 4000;
   setInterval(function () {
-    if (document.documentElement.classList.contains("paused")) return;
+    if (ready || document.documentElement.classList.contains("paused")) return;
     var s = Math.floor((Date.now() - t0) / 1000);
     document.getElementById("elapsed").textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
   }, 1000);

@@ -66,7 +66,9 @@ check "state=generating immediately" "$ST" "generating"
 [ -f "$T/home/.fig/jobs/$SLUG/edited.html" ] && ok "edited.html pre-copied at t=0" || bad "no pre-copy"
 # status page is the animated one (no meta refresh)
 SP=$(curl -s "http://127.0.0.1:$PORT/jobs/$SLUG/")
-echo "$SP" | grep -q "figleaf" && ok "status page carries the branch animation" || bad "animation missing"
+echo "$SP" | grep -q 'class="ring"' && echo "$SP" | grep -q 'class="branch"' && ok "status page carries the logo-build animation" || bad "animation missing"
+echo "$SP" | grep -q "View revised page" && ok "ready-state button present" || bad "view button missing"
+echo "$SP" | grep -qi "location.replace\|Refresh:" && bad "auto-redirect still present" || ok "no auto-redirect (button handoff)"
 echo "$SP" | grep -q "EventSource" && ok "status page uses SSE" || bad "no SSE"
 echo "$SP" | grep -qi "refresh" && bad "meta-refresh still present" || ok "meta-refresh gone"
 echo "$SP" | grep -q "Applying 1 marking" && ok "marking count rendered" || bad "marking count missing"
@@ -122,6 +124,10 @@ mkdir -p "$L"; echo '{"t":1}' > "$L/annotations.json"; echo "<html>old</html>" >
 LOC=$(curl -s -o /dev/null -w "%{redirect_url}" "http://127.0.0.1:$PORT/jobs/legacy-job-0101120000/")
 echo "$LOC" | grep -q "/pages/legacy-job" && ok "legacy edited.html = done" || bad "legacy broken ($LOC)"
 
+echo "== T9 favicon on figd surfaces =="
+curl -s "http://127.0.0.1:$PORT/" | grep -q 'rel="icon" type="image/svg+xml"' && ok "index has fig favicon" || bad "index favicon missing"
+curl -s "http://127.0.0.1:$PORT/pages/$SLUG/" | grep -q 'rel="icon" type="image/svg+xml"' && ok "result page has fig favicon" || bad "result favicon missing"
+
 echo "== T8 settings: network tools granted + legacy default migrated =="
 python3 - "$T/home/.fig/settings.json" <<'PYS'
 import json,sys
@@ -151,6 +157,37 @@ PYS
 echo "== T7 wrong token still rejected =="
 C=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$PORT/fig" -H "X-Fig-Token: wrong" -d '{}')
 check "bad token → 403" "$C" "403"
+
+echo "== T10 changelog pill matches the Fig button radius =="
+curl -s "http://127.0.0.1:$PORT/pages/$SLUG/" | grep -q 'fig-changelog-btn" type="button" style="[^"]*border-radius:9px' && ok "pill radius 9px" || bad "pill radius wrong"
+
+echo "== T11 fig-on-fig: changelog accumulates across rounds =="
+echo edit > "$T/home/.fig-test-mode"
+python3 - "$T/p11.json" "$SLUG" <<'PY11'
+import json,sys
+json.dump({"type":"html","url":"http://127.0.0.1:41599/pages/"+sys.argv[2]+"/","title":"Test Page Round2","viewport":{"w":800,"h":600},
+"capturedAt":"now","html":"<!doctype html><html><head></head><body><h1>OLD-HEADLINE</h1><p>round two</p></body></html>",
+"annotations":{"comments":[{"id":1,"n":1,"text":"again","x":1,"y":1,"targetPath":"h1","targetText":"OLD-HEADLINE"}],"highlights":[],"strokes":[]}}, open(sys.argv[1],"w"))
+PY11
+SLUG2B=$(post "$T/p11.json" | sed '$d' | python3 -c "import json,sys;print(json.load(sys.stdin)['job'])")
+[ -f "$T/home/.fig/jobs/$SLUG2B/history.json" ] && ok "history carried from parent job" || bad "no history.json"
+sleep 1.2
+P2=$(curl -s "http://127.0.0.1:$PORT/pages/$SLUG2B/")
+echo "$P2" | grep -q "Changes · 2" && ok "pill counts BOTH rounds (2)" || bad "pill count wrong"
+echo "$P2" | grep -q "Round 1" && echo "$P2" | grep -q "Round 2 · latest" && ok "rounds labeled" || bad "round labels missing"
+
+echo "== T12 settings page =="
+curl -s "http://127.0.0.1:$PORT/settings" | grep -q "Where results open" && ok "GET /settings renders" || bad "settings page missing"
+C=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$PORT/settings" --data "token=wrong&target=vercel")
+check "settings POST bad token → 403" "$C" "403"
+curl -s -o /dev/null -X POST "http://127.0.0.1:$PORT/settings" --data "token=testtoken123&target=vercel&reviewOverlay=on"
+python3 -c "
+import json;d=json.load(open('$T/home/.fig/settings.json'))
+assert d['target']=='vercel' and d['reviewOverlay'] is True, d" && ok "settings POST persists" || bad "settings not saved"
+curl -s -o /dev/null -X POST "http://127.0.0.1:$PORT/settings" --data "token=testtoken123&target=localhost"
+python3 -c "
+import json;d=json.load(open('$T/home/.fig/settings.json'))
+assert d['target']=='localhost' and d['reviewOverlay'] is False, d" && ok "settings toggle back persists" || bad "toggle back failed"
 
 kill $FIGD_PID 2>/dev/null
 echo

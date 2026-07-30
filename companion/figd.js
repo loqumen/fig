@@ -80,6 +80,17 @@ function writeState(jobDir, patch) {
   return next;
 }
 
+
+// The Fig badge as the tab favicon on everything figd serves, including the
+// revised page (injected at serve time; edited.html on disk stays clean).
+const FAVICON = "data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%221024%22%20height%3D%221024%22%20viewBox%3D%220%200%201024%201024%22%3E%3Cdefs%3E%3ClinearGradient%20id%3D%22base%22%20x1%3D%220.1349%22%20y1%3D%22-0.0843%22%20x2%3D%220.8651%22%20y2%3D%221.0843%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%2348c742%22%2F%3E%3Cstop%20offset%3D%220.52%22%20stop-color%3D%22%232C9F28%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%231c761a%22%2F%3E%3C%2FlinearGradient%3E%3ClinearGradient%20id%3D%22bev%22%20x1%3D%220%22%20y1%3D%220%22%20x2%3D%220%22%20y2%3D%221%22%3E%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23ffffff%22%20stop-opacity%3D%220.30%22%2F%3E%3Cstop%20offset%3D%220.05%22%20stop-color%3D%22%23ffffff%22%20stop-opacity%3D%220.07%22%2F%3E%3Cstop%20offset%3D%220.55%22%20stop-color%3D%22%23ffffff%22%20stop-opacity%3D%220%22%2F%3E%3Cstop%20offset%3D%220.93%22%20stop-color%3D%22%23000000%22%20stop-opacity%3D%220.10%22%2F%3E%3Cstop%20offset%3D%221%22%20stop-color%3D%22%23000000%22%20stop-opacity%3D%220.30%22%2F%3E%3C%2FlinearGradient%3E%3Cmask%20id%3D%22knock%22%20maskUnits%3D%22userSpaceOnUse%22%20x%3D%220%22%20y%3D%220%22%20width%3D%221024%22%20height%3D%221024%22%3E%3Crect%20width%3D%221024%22%20height%3D%221024%22%20fill%3D%22%23000%22%2F%3E%3Cg%20transform%3D%22translate%28152%2C152%29%20scale%281.5%29%22%3E%3Ccircle%20cx%3D%22240%22%20cy%3D%22240%22%20r%3D%22208%22%20fill%3D%22%23fff%22%2F%3E%3Cg%20transform%3D%22translate%2870%2C410%29%20rotate%28-45%29%22%20fill%3D%22%23000%22%3E%3Cpath%20d%3D%22M%209.0%20-31.7%20L%20323.0%20-15.9%20Q%20330.0%20-15.5%20330.0%20-8.5%20L%20330.0%208.5%20Q%20330.0%2015.5%20323.0%2015.9%20L%209.0%2031.7%20Q%200.0%2032.0%200.0%2023.0%20L%200.0%20-23.0%20Q%200.0%20-32.0%209.0%20-31.7%20Z%22%2F%3E%3C%2Fg%3E%3Cellipse%20cx%3D%22235%22%20cy%3D%22123%22%20rx%3D%2236%22%20ry%3D%2253%22%20fill%3D%22%23000%22%20transform%3D%22rotate%287%20235%20123%29%22%2F%3E%3Cpath%20d%3D%22M%20288.20%20275.25%20C%20289.92%20275.08%20291.69%20275.13%20293.44%20275.25%20C%20295.18%20275.38%20296.98%20275.62%20298.67%20275.99%20C%20300.37%20276.36%20301.98%20276.94%20303.61%20277.47%20C%20305.23%20278.00%20306.86%20278.55%20308.44%20279.19%20C%20310.02%20279.83%20311.55%20280.60%20313.10%20281.32%20C%20314.65%20282.05%20316.22%20282.72%20317.72%20283.54%20C%20319.23%20284.37%20320.70%20285.29%20322.14%20286.26%20C%20323.59%20287.24%20324.99%20288.32%20326.39%20289.40%20C%20327.79%20290.48%20329.17%20291.60%20330.54%20292.75%20C%20331.91%20293.90%20333.31%20295.08%20334.62%20296.30%20C%20335.92%20297.52%20337.19%20298.75%20338.38%20300.07%20C%20339.58%20301.39%20340.70%20302.81%20341.78%20304.21%20C%20342.87%20305.61%20343.89%20307.03%20344.89%20308.47%20C%20345.88%20309.90%20346.87%20311.34%20347.76%20312.82%20C%20348.66%20314.30%20349.49%20315.80%20350.26%20317.33%20C%20351.02%20318.86%20351.73%20320.42%20352.38%20322.00%20C%20353.03%20323.58%20353.62%20325.18%20354.15%20326.81%20C%20354.68%20328.44%20355.20%20330.07%20355.57%20331.76%20C%20355.95%20333.46%20356.27%20335.22%20356.41%20336.96%20C%20356.55%20338.70%20356.57%20340.47%20356.41%20342.20%20C%20356.26%20343.92%20355.93%20345.66%20355.48%20347.31%20C%20355.03%20348.97%20354.46%20350.58%20353.71%20352.12%20C%20352.96%20353.66%20352.05%20355.20%20351.00%20356.54%20C%20349.95%20357.88%20348.73%20359.12%20347.38%20360.16%20C%20346.04%20361.20%20344.50%20362.11%20342.92%20362.77%20C%20341.35%20363.43%20339.64%20363.84%20337.94%20364.13%20C%20336.24%20364.42%20334.48%20364.51%20332.72%20364.50%20C%20330.96%20364.49%20329.13%20364.34%20327.39%20364.09%20C%20325.66%20363.83%20323.97%20363.20%20322.31%20362.98%20C%20320.64%20362.75%20318.88%20362.52%20317.41%20362.74%20C%20315.94%20362.95%20314.65%20363.41%20313.47%20364.28%20C%20312.29%20365.16%20311.33%20366.65%20310.33%20367.99%20C%20309.33%20369.34%20308.50%20370.94%20307.46%20372.35%20C%20306.41%20373.76%20305.31%20375.21%20304.04%20376.45%20C%20302.78%20377.68%20301.33%20378.81%20299.87%20379.76%20C%20298.42%20380.71%20296.92%20381.56%20295.31%20382.14%20C%20293.71%20382.72%20291.95%20383.07%20290.23%20383.25%20C%20288.51%20383.44%20286.71%20383.44%20284.99%20383.25%20C%20283.27%20383.07%20281.52%20382.72%20279.91%20382.14%20C%20278.29%20381.57%20276.79%20380.75%20275.32%20379.82%20C%20273.86%20378.89%20272.44%20377.76%20271.13%20376.56%20C%20269.81%20375.36%20268.57%20373.99%20267.43%20372.63%20C%20266.29%20371.26%20265.21%20369.85%20264.29%20368.38%20C%20263.38%20366.91%20262.67%20365.36%20261.94%20363.81%20C%20261.22%20362.26%20260.55%20360.69%20259.96%20359.09%20C%20259.37%20357.48%20258.89%20355.83%20258.39%20354.19%20C%20257.89%20352.55%20257.40%20350.91%20256.98%20349.23%20C%20256.55%20347.56%20256.17%20345.87%20255.87%20344.15%20C%20255.56%20342.43%20255.31%20340.68%20255.13%20338.91%20C%20254.94%20337.14%20254.82%20335.34%20254.76%20333.52%20C%20254.69%20331.70%20254.69%20329.80%20254.76%20327.97%20C%20254.82%20326.15%20254.94%20324.35%20255.13%20322.58%20C%20255.31%20320.81%20255.56%20319.07%20255.87%20317.34%20C%20256.17%20315.62%20256.58%20313.95%20256.98%20312.26%20C%20257.37%20310.57%20257.76%20308.89%20258.21%20307.23%20C%20258.66%20305.57%20259.14%20303.91%20259.69%20302.30%20C%20260.24%20300.68%20260.84%20299.07%20261.54%20297.52%20C%20262.24%20295.96%20263.04%20294.44%20263.89%20292.95%20C%20264.75%20291.45%20265.65%20289.98%20266.67%20288.55%20C%20267.70%20287.13%20268.83%20285.69%20270.03%20284.42%20C%20271.24%20283.14%20272.53%20281.96%20273.91%20280.91%20C%20275.29%20279.87%20276.78%20278.92%20278.31%20278.15%20C%20279.84%20277.38%20281.44%20276.78%20283.09%20276.30%20C%20284.73%20275.82%20286.47%20275.43%20288.20%20275.25%20Z%22%20fill%3D%22%23000%22%20transform%3D%22translate%28-4.95%2C-4.95%29%22%2F%3E%3C%2Fg%3E%3C%2Fmask%3E%3C%2Fdefs%3E%3Crect%20width%3D%221024%22%20height%3D%221024%22%20rx%3D%22232%22%20fill%3D%22url%28%23base%29%22%2F%3E%3Crect%20width%3D%221024%22%20height%3D%221024%22%20rx%3D%22232%22%20fill%3D%22url%28%23bev%29%22%2F%3E%3Crect%20width%3D%221024%22%20height%3D%221024%22%20fill%3D%22%23ffffff%22%20mask%3D%22url%28%23knock%29%22%2F%3E%3C%2Fsvg%3E";
+const FAV_TAG = `<link rel="icon" type="image/svg+xml" href="${FAVICON}">`;
+function injectFavicon(html) {
+  if (/rel="icon"[^>]*svg\+xml/.test(html)) return html;
+  if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => m + FAV_TAG);
+  return FAV_TAG + html;
+}
+
 const fileHash = (p) => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
 
 function buildPrompt(job, payload) {
@@ -141,7 +152,7 @@ function buildPrompt(job, payload) {
     lines.push("- edited.html already IS the page. Read it, then apply the markings with TARGETED Edit operations on edited.html. Do NOT rewrite the whole file and do NOT use Write on it — everything not covered by a marking (styling, layout, the <base> tag) must survive byte-for-byte.");
     lines.push("- Remove each <mark data-fig-highlight> wrapper as you apply its change (apply the change, drop the marker).");
   }
-  lines.push("- If a marking calls for a real asset from the web (a logo, an image, a brand mark), GET THE REAL ONE: use WebFetch to locate it on the named site and curl to download it into this directory. Embed it in edited.html as inline SVG or a data: URI — never as a local file path (the page is served standalone) and never a hand-drawn or typographic look-alike. If the real asset truly cannot be fetched, keep a labeled placeholder and say so in a fig-question comment.");
+  lines.push("- If a marking calls for a real asset from the web (a logo, an image, a brand mark), GET THE REAL ONE: WebFetch the named site and read its HTML for the asset (the header/footer logo <img>, srcset, og:image, or CDN url() references), then curl the file into this directory. Prefer SVG over PNG, the variant designed for the page's background (a light page gets the on-light/dark-text version), and the largest resolution served — never a thumbnail. Embed it in edited.html as inline SVG or a data: URI — never as a local file path (the page is served standalone) and never a hand-drawn or typographic look-alike. If the real asset truly cannot be fetched, keep a labeled placeholder and say so in a fig-question comment.");
   lines.push("- If a marking is ambiguous, make the most reasonable change AND add an HTML comment <!-- fig-question: ... --> at the spot explaining the open question.");
   lines.push('- Also write changes.json in this directory: a JSON array with one entry per marking IN THE ORDER GIVEN, each {"marking": "the marking text or [n]", "change": "one sentence: exactly what changed", "where": "short location in the revised document"}. If a marking produced no change, say why in "change".');
   lines.push("- Do not add scripts.");
@@ -166,11 +177,34 @@ function claudeBin() {
 function runGeneration(jobDir, settings) {
   const prompt = fs.readFileSync(path.join(jobDir, "prompt.md"), "utf8");
   const log = fs.openSync(path.join(jobDir, "gen.log"), "a");
-  const child = spawn(claudeBin(), ["-p", prompt, ...settings.claudeArgs], {
+  // Stream claude's activity so the status page can narrate it live. Only
+  // added when the args don't already pick an output format (custom setups
+  // keep their behavior; the parser below tolerates plain text silently).
+  const args = ["-p", prompt, ...settings.claudeArgs];
+  if (!settings.claudeArgs.includes("--output-format")) {
+    args.push("--output-format", "stream-json", "--verbose");
+  }
+  const child = spawn(claudeBin(), args, {
     cwd: jobDir,
-    stdio: ["ignore", log, log],
+    stdio: ["ignore", "pipe", log],
     env: { ...process.env, PATH: [process.env.PATH, path.join(os.homedir(), ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"].join(":") },
   });
+
+  // Translate the event stream to short plain-English status lines, written
+  // into job state — the SSE channel pushes each one to the status page.
+  const ctr = { edits: 0 };
+  const rl = require("readline").createInterface({ input: child.stdout });
+  rl.on("line", (line) => {
+    try { fs.writeSync(log, line + "\n"); } catch { /* log closed */ }
+    let ev;
+    try { ev = JSON.parse(line); } catch { return; }
+    const status = statusFromEvent(ev, ctr);
+    if (status) {
+      const cur = readState(jobDir);
+      if (!cur || cur.status !== status) writeState(jobDir, { status });
+    }
+  });
+
   const fail = (msg) => {
     fs.writeFileSync(path.join(jobDir, "error.txt"), msg);
     writeState(jobDir, { phase: "error", error: msg, finishedAt: new Date().toISOString() });
@@ -196,6 +230,46 @@ function runGeneration(jobDir, settings) {
   });
 }
 
+// One stream event -> one short plain-English line, or null to keep the last.
+// Assistant narration wins (it names the specific change); tool calls give
+// the reliable skeleton when there is no narration.
+function statusFromEvent(ev, ctr) {
+  if (ev.type !== "assistant" || !ev.message || !Array.isArray(ev.message.content)) return null;
+  let toolLine = null;
+  for (const b of ev.message.content) {
+    if (b.type === "text" && b.text) {
+      const line = b.text.trim().split("\n")[0].replace(/[*_`#]/g, "").trim();
+      if (line.length >= 8) return line.length > 90 ? line.slice(0, 87) + "…" : line;
+    }
+    if (b.type === "tool_use" && !toolLine) {
+      const inp = b.input || {};
+      const f = String(inp.file_path || "").split("/").pop();
+      switch (b.name) {
+        case "Read":
+          toolLine = f === "annotations.json" ? "Reading the markings…"
+            : f === "snapshot.html" || f === "edited.html" ? "Reading the captured page…"
+            : f === "source.pdf" ? "Reading the PDF…" : `Reading ${f || "a file"}…`;
+          break;
+        case "Edit":
+        case "MultiEdit":
+          ctr.edits += 1;
+          toolLine = `Applying change ${ctr.edits}…`;
+          break;
+        case "Write":
+          toolLine = f === "changes.json" ? "Writing the change log…" : `Writing ${f || "a file"}…`;
+          break;
+        case "WebFetch":
+          try { toolLine = `Looking at ${new URL(inp.url).hostname}…`; }
+          catch { toolLine = "Looking something up…"; }
+          break;
+        case "WebSearch": toolLine = "Searching the web…"; break;
+        case "Bash": toolLine = /\bcurl\b/.test(inp.command || "") ? "Downloading an asset…" : "Running a command…"; break;
+      }
+    }
+  }
+  return toolLine;
+}
+
 const BRAVE = "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser";
 
 // For PDF-sourced jobs, also export the revised page back to PDF.
@@ -209,18 +283,56 @@ function printPdf(jobDir) {
   );
 }
 
+// Deploy the revised page to the shared edits project. With the review
+// overlay (default on), the deployed page carries the /fig skill's shared
+// comment system — pins, highlights, draw — backed by the project's
+// /api/comments store, so teammates leave feedback on the SAME page from a
+// plain URL, no install. The overlay is injected by the canonical
+// build-overlay.py (sentinel split, stabilizer CSS, load-time init — rules
+// that each carry failure history live THERE, not re-implemented here).
+// data-fig-version is the job slug, so comments persist across redeploys.
+const BUILD_OVERLAY = path.join(os.homedir(), "CLAUDE/tools/fig/build-overlay.py");
+const EDITS_DIR_DEFAULT = path.join(os.homedir(), "Desktop", "edits");
+
 function deployToVercel(jobDir, settings) {
   try {
     const slug = path.basename(jobDir);
-    const dest = path.join(settings.vercelDir, "public", slug);
-    fs.mkdirSync(dest, { recursive: true });
-    const html = injectChangelog(jobDir, fs.readFileSync(path.join(jobDir, "edited.html"), "utf8"));
-    fs.writeFileSync(path.join(dest, "index.html"), html);
-    execFile("vercel", ["--prod"], { cwd: settings.vercelDir }, (err, stdout) => {
-      fs.writeFileSync(
-        path.join(jobDir, "deploy.txt"),
-        err ? "Deploy failed: " + err.message : "Deployed: " + (stdout || "").trim().split("\n").pop()
-      );
+    const html = injectFavicon(injectChangelog(jobDir, fs.readFileSync(path.join(jobDir, "edited.html"), "utf8")));
+    const src = path.join(jobDir, "deploy-src.html");
+    fs.writeFileSync(src, html);
+
+    const runVercel = (note) => {
+      execFile("vercel", ["--prod"], { cwd: settings.vercelDir }, (err, stdout) => {
+        fs.writeFileSync(
+          path.join(jobDir, "deploy.txt"),
+          err ? "Deploy failed: " + err.message
+              : "Deployed: " + (stdout || "").trim().split("\n").pop() + note
+        );
+      });
+    };
+
+    // The overlay builder writes to ~/Desktop/edits/public/<slug>/ by design;
+    // only route through it when that IS the deploy target.
+    const wantOverlay = settings.reviewOverlay !== false
+      && settings.vercelDir === EDITS_DIR_DEFAULT
+      && fs.existsSync(BUILD_OVERLAY);
+    if (!wantOverlay) {
+      const dest = path.join(settings.vercelDir, "public", slug);
+      fs.mkdirSync(dest, { recursive: true });
+      fs.writeFileSync(path.join(dest, "index.html"), html);
+      runVercel("");
+      return;
+    }
+    execFile("python3", [BUILD_OVERLAY, src, slug, "--version", slug, "--clear-mine"], (err) => {
+      if (err) {
+        // fall back to a plain copy rather than losing the deploy
+        const dest = path.join(settings.vercelDir, "public", slug);
+        fs.mkdirSync(dest, { recursive: true });
+        fs.writeFileSync(path.join(dest, "index.html"), html);
+        runVercel(" (review overlay skipped: " + String(err.message || err).slice(0, 120) + ")");
+        return;
+      }
+      runVercel(" · team review comments enabled");
     });
   } catch (e) {
     fs.writeFileSync(path.join(jobDir, "deploy.txt"), "Deploy failed: " + e.message);
@@ -259,28 +371,42 @@ const esc = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").
 // clean (the PDF export reads the raw file and never carries the widget).
 // Hidden by default; a small pill toggles it.
 function injectChangelog(jobDir, html) {
-  const p = path.join(jobDir, "changes.json");
-  if (!fs.existsSync(p)) return html;
-  let items;
-  try { items = JSON.parse(fs.readFileSync(p, "utf8")); } catch { return html; }
-  if (!Array.isArray(items) || !items.length) return html;
-  const rows = items.map((c, i) => `
-    <li style="display:flex;gap:10px;padding:10px 0;align-items:flex-start;${i ? "box-shadow:0 -1px 0 #e8e6e1;" : ""}">
-      <span style="flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:#2C9F28;color:#fafaf8;font-size:11px;display:flex;align-items:center;justify-content:center;">${i + 1}</span>
+  let current = [];
+  try { current = JSON.parse(fs.readFileSync(path.join(jobDir, "changes.json"), "utf8")); } catch { /* none */ }
+  if (!Array.isArray(current)) current = [];
+  let history = [];
+  try { history = JSON.parse(fs.readFileSync(path.join(jobDir, "history.json"), "utf8")); } catch { /* first round */ }
+  if (!Array.isArray(history)) history = [];
+  const rounds = [...history.map((h) => h.changes), current].filter((r) => Array.isArray(r) && r.length);
+  if (!rounds.length) return html;
+  const multi = rounds.length > 1;
+  let n = 0;
+  const blocks = rounds.map((changes, ri) => {
+    const label = multi
+      ? `<li style="padding:12px 0 2px;${ri ? "box-shadow:0 -1px 0 #e8e6e1;" : ""}"><span style="font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#9a9790;">Round ${ri + 1}${ri === rounds.length - 1 ? " · latest" : ""}</span></li>`
+      : "";
+    const rows = changes.map((c, i) => {
+      n += 1;
+      return `
+    <li style="display:flex;gap:10px;padding:10px 0;align-items:flex-start;${(i || multi) ? "" : (n > 1 ? "box-shadow:0 -1px 0 #e8e6e1;" : "")}">
+      <span style="flex:0 0 auto;width:22px;height:22px;border-radius:50%;background:#2C9F28;color:#fafaf8;font-size:11px;display:flex;align-items:center;justify-content:center;">${n}</span>
       <span style="display:block;min-width:0;">
         <span style="display:block;color:#1a1a1a;">${esc(c.change)}</span>
         ${c.marking ? `<span style="display:block;color:#9a9790;font-size:11px;margin-top:2px;">marking: ${esc(c.marking)}</span>` : ""}
         ${c.where ? `<span style="display:block;color:#9a9790;font-size:11px;">${esc(c.where)}</span>` : ""}
       </span>
-    </li>`).join("");
+    </li>`;
+    }).join("");
+    return label + rows;
+  }).join("");
   const widget = `
 <!--fig-changelog-start-->
 <div id="fig-changelog" data-fig-ui="1" style="position:fixed;left:24px;bottom:24px;z-index:2147483000;font-family:'DM Sans',-apple-system,system-ui,sans-serif;font-size:13px;line-height:1.5;">
   <div id="fig-changelog-panel" style="display:none;width:340px;max-height:55vh;overflow:auto;background:#fafaf8;color:#1a1a1a;border:1px solid #e8e6e1;border-radius:12px;box-shadow:0 6px 24px rgba(26,26,26,.18);padding:14px 16px;margin:0 0 10px;">
-    <div style="font-weight:500;margin-bottom:2px;">What changed</div>
-    <ul style="list-style:none;margin:0;padding:0;">${rows}</ul>
+    <div style="font-weight:500;margin-bottom:2px;">What changed${multi ? ` <span style="color:#9a9790;font-weight:300;">· ${rounds.length} rounds</span>` : ""}</div>
+    <ul style="list-style:none;margin:0;padding:0;">${blocks}</ul>
   </div>
-  <button id="fig-changelog-btn" type="button" style="border:none;cursor:pointer;background:#2C9F28;color:#fafaf8;border-radius:999px;padding:9px 16px;font-family:inherit;font-size:13px;box-shadow:0 4px 16px rgba(26,26,26,.2);">Changes · ${items.length}</button>
+  <button id="fig-changelog-btn" type="button" style="border:none;cursor:pointer;background:#2C9F28;color:#fafaf8;border-radius:9px;padding:9px 16px;font-family:inherit;font-size:13px;box-shadow:0 4px 16px rgba(26,26,26,.2);">Changes · ${n}</button>
 </div>
 <script>(function(){var b=[...document.querySelectorAll("#fig-changelog-btn")].pop(),p=[...document.querySelectorAll("#fig-changelog-panel")].pop();b.addEventListener("click",function(){p.style.display=p.style.display==="none"?"block":"none";});})();</script>
 <!--fig-changelog-end-->`;
@@ -289,23 +415,24 @@ function injectChangelog(jobDir, html) {
 }
 
 function page(title, body) {
-  return `<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
+  return `<!doctype html><html><head><meta charset="utf-8">${FAV_TAG}<title>${title}</title>
 <style>body{font-family:system-ui,-apple-system,sans-serif;background:#fafaf8;color:#1a1a1a;max-width:640px;margin:80px auto;padding:0 24px;line-height:1.7}
 a{color:#2C9F28}h1{font-size:20px;font-weight:600}.muted{color:#4a4a46}</style></head><body>${body}</body></html>`;
 }
 
-// The generating page: the fig-branch growth animation (the approved badge
-// leaf, verbatim from mark/fig-badge.svg) wired to live job state. SSE
-// pushes "done"/"error" the moment figd records it — the redirect to the
-// finished page is instant instead of waiting out a refresh interval; a 1.5s
-// poll is the fallback when EventSource drops.
+// The generating page: the approved loading design (companion/loading-demo.html
+// is the reference). The Fig badge assembles — ring draws, branch grows,
+// fruit + leaf pop — while the status line narrates the generation live from
+// the stream (SSE push, poll fallback). On done, NO auto-redirect: the mark
+// freezes fully drawn and a "View revised page" button appears; the whole
+// flow stays in this one tab.
 function generatingPage(slug, st) {
   const marks = st.marks || {};
   const total = (marks.comments || 0) + (marks.highlights || 0) + (marks.strokes || 0);
-  const what = total
-    ? `Applying ${total} marking${total === 1 ? "" : "s"} to “${esc(st.title || "the page")}”`
-    : `Applying the markings to “${esc(st.title || "the page")}”`;
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Fig — generating</title>
+  const initial = st.status || (total
+    ? `Applying ${total} marking${total === 1 ? "" : "s"} to \u201C${esc(st.title || "the page")}\u201D\u2026`
+    : "Getting started\u2026");
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">${FAV_TAG}<title>Fig \u2014 generating</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
@@ -321,83 +448,113 @@ function generatingPage(slug, st) {
     line-height: 1.7;
     text-align: center;
   }
-  h1 { font-size: 20px; font-weight: 400; margin: 8px 0 4px; }
-  .muted { color: #4a4a46; font-size: 14px; margin: 0; }
-  .elapsed { color: #9a9790; font-size: 12px; margin-top: 6px; font-variant-numeric: tabular-nums; }
-  .scene { width: 340px; height: 340px; margin: 0 auto; }
-  #wrap { transition: opacity 0.2s ease; }
+  h1 { font-size: 20px; font-weight: 400; margin: 10px 0 2px; }
+  .scene { width: 300px; height: 300px; margin: 0 auto; }
 
-  .grow { animation: cycle 10s linear infinite; }
+  /* One shared 9s clock. Ring draws 0-26%, branch grows 30-48%, fruit pops
+     52-60%, leaf pops 62-70%, hold to 90%, breathe out, restart. */
+  .cycle { animation: cycle 9s linear infinite; }
   @keyframes cycle {
-    0%, 94% { opacity: 1; }
-    98%, 100% { opacity: 0; }
+    0%, 91% { opacity: 1; }
+    /* hold 0 through the wrap: the restart snaps opacity back while every
+       shape is at its EMPTY start state, so nothing can flash. Ramping back
+       to 1 before 100% blinked the fully-drawn logo for a few ms. */
+    97%, 100% { opacity: 0; }
   }
-  .sway {
-    transform-origin: 60px 300px;
-    animation: sway 5s ease-in-out infinite alternate;
-  }
-  @keyframes sway {
-    from { transform: rotate(-0.7deg); }
-    to { transform: rotate(1deg); }
-  }
-  .branch, .twig {
+
+  .ring {
     fill: none;
     stroke: #2C9F28;
+    stroke-width: 10;
     stroke-linecap: round;
-    stroke-dasharray: 1;
-    stroke-dashoffset: 0;
+    stroke-dasharray: 1307;
+    animation: ring 9s linear infinite;
+    transform: rotate(-90deg);
+    transform-origin: 240px 240px;
   }
-  .branch { stroke-width: 7; animation: draw-branch 10s linear infinite; }
-  .twig { stroke-width: 4; }
-  @keyframes draw-branch {
-    0% { stroke-dashoffset: 1; }
-    32% { stroke-dashoffset: 0; }
+  @keyframes ring {
+    0% { stroke-dashoffset: 1307; }
+    26% { stroke-dashoffset: 0; }
     100% { stroke-dashoffset: 0; }
   }
-  .t1 { animation: draw-t1 10s linear infinite; }
-  @keyframes draw-t1 {
-    0%, 11.9% { stroke-dashoffset: 1; opacity: 0; }
-    12% { stroke-dashoffset: 1; opacity: 1; }
-    22% { stroke-dashoffset: 0; opacity: 1; }
-    100% { stroke-dashoffset: 0; opacity: 1; }
+
+  /* The branch is a filled taper along its local x axis; scaleX from its
+     base (fill-box left edge) grows it out of the bottom-left, exactly the
+     direction the -45° wrapper points it. */
+  .branch {
+    transform-box: fill-box;
+    transform-origin: 0% 50%;
+    transform: scaleX(0);
+    animation: branch 9s cubic-bezier(0.33, 0, 0.2, 1) infinite;
   }
-  .t2 { animation: draw-t2 10s linear infinite; }
-  @keyframes draw-t2 {
-    0%, 21.9% { stroke-dashoffset: 1; opacity: 0; }
-    22% { stroke-dashoffset: 1; opacity: 1; }
-    32% { stroke-dashoffset: 0; opacity: 1; }
-    100% { stroke-dashoffset: 0; opacity: 1; }
+  @keyframes branch {
+    0%, 30% { transform: scaleX(0); }
+    48% { transform: scaleX(1); }
+    100% { transform: scaleX(1); }
   }
-  .t3 { animation: draw-t3 10s linear infinite; }
-  @keyframes draw-t3 {
-    0%, 29.9% { stroke-dashoffset: 1; opacity: 0; }
-    30% { stroke-dashoffset: 1; opacity: 1; }
-    40% { stroke-dashoffset: 0; opacity: 1; }
-    100% { stroke-dashoffset: 0; opacity: 1; }
-  }
+
   .pop {
-    fill: #2C9F28;
     transform-box: fill-box;
     transform-origin: 50% 100%;
+    transform: scale(0);
   }
-  .p1 { animation: pop1 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
-  @keyframes pop1 { 0%, 24% { transform: scale(0); } 30% { transform: scale(1.1); } 33%, 100% { transform: scale(1); } }
-  .p2 { animation: pop2 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
-  @keyframes pop2 { 0%, 32% { transform: scale(0); } 38% { transform: scale(1.1); } 41%, 100% { transform: scale(1); } }
-  .p3 { animation: pop3 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
-  @keyframes pop3 { 0%, 40% { transform: scale(0); } 46% { transform: scale(1.1); } 49%, 100% { transform: scale(1); } }
-  .p4 { animation: pop4 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
-  @keyframes pop4 { 0%, 48% { transform: scale(0); } 54% { transform: scale(1.1); } 57%, 100% { transform: scale(1); } }
-  .p5 { animation: pop5 10s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
-  @keyframes pop5 { 0%, 56% { transform: scale(0); } 62% { transform: scale(1.1); } 64%, 100% { transform: scale(1); } }
+  .fruit { animation: fruit 9s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+  @keyframes fruit {
+    0%, 52% { transform: scale(0); }
+    58% { transform: scale(1.08); }
+    60%, 100% { transform: scale(1); }
+  }
+  .leaf { animation: leafpop 9s cubic-bezier(0.34, 1.56, 0.64, 1) infinite; }
+  @keyframes leafpop {
+    0%, 62% { transform: scale(0); }
+    68% { transform: scale(1.08); }
+    70%, 100% { transform: scale(1); }
+  }
 
-  .dots span {
-    display: inline-block;
-    animation: dot 1.8s ease-in-out infinite;
+  /* Live status line: what claude is doing right now, plain English. */
+  .status {
+    color: #4a4a46;
+    font-size: 14px;
+    margin: 2px 0 0;
+    min-height: 24px;
+    transition: opacity 0.25s ease;
   }
-  .dots span:nth-child(2) { animation-delay: 0.3s; }
-  .dots span:nth-child(3) { animation-delay: 0.6s; }
-  @keyframes dot { 0%, 60%, 100% { opacity: 0.25; } 30% { opacity: 1; } }
+  .status.swap { opacity: 0; }
+  .elapsed { color: #9a9790; font-size: 12px; margin-top: 4px; font-variant-numeric: tabular-nums; }
+  
+  /* Ready state: the branch finishes growing and STAYS — the cycle stops on
+     the complete mark — and the view button pops in. No auto-redirect. */
+  .ready .cycle { animation: none; opacity: 1; }
+  .ready .ring { animation: none; stroke-dashoffset: 0; }
+  .ready .branch { animation: none; transform: scaleX(1); }
+  .ready .fruit, .ready .leaf { animation: none; transform: scale(1); }
+  .ready .dots { display: none; }
+
+  .view-btn {
+    display: none;
+    margin: 18px auto 0;
+    background: #2C9F28;
+    color: #fafaf8;
+    border: none;
+    border-radius: 10px;
+    padding: 15px 30px;
+    font-family: inherit;
+    font-size: 17px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(44, 159, 40, 0.35);
+    transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .view-btn:hover { background: #26881f; }
+  .ready .view-btn {
+    display: block;
+    animation: btn-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  }
+  @keyframes btn-in {
+    from { opacity: 0; transform: scale(0.88) translateY(6px); }
+    to { opacity: 1; transform: scale(1) translateY(0); }
+  }
 
   .calm {
     position: fixed; right: 16px; bottom: 12px;
@@ -406,61 +563,60 @@ function generatingPage(slug, st) {
     text-underline-offset: 3px;
   }
   html.paused * { animation-play-state: paused !important; }
-  @media (prefers-reduced-motion: reduce) {
-    * { animation: none !important; }
-  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
 </style></head>
 <body>
-  <div id="wrap">
-  <svg class="scene" viewBox="0 0 400 400" aria-hidden="true">
-    <defs>
-      <path id="figleaf" d="M 288.20 275.25 C 289.92 275.08 291.69 275.13 293.44 275.25 C 295.18 275.38 296.98 275.62 298.67 275.99 C 300.37 276.36 301.98 276.94 303.61 277.47 C 305.23 278.00 306.86 278.55 308.44 279.19 C 310.02 279.83 311.55 280.60 313.10 281.32 C 314.65 282.05 316.22 282.72 317.72 283.54 C 319.23 284.37 320.70 285.29 322.14 286.26 C 323.59 287.24 324.99 288.32 326.39 289.40 C 327.79 290.48 329.17 291.60 330.54 292.75 C 331.91 293.90 333.31 295.08 334.62 296.30 C 335.92 297.52 337.19 298.75 338.38 300.07 C 339.58 301.39 340.70 302.81 341.78 304.21 C 342.87 305.61 343.89 307.03 344.89 308.47 C 345.88 309.90 346.87 311.34 347.76 312.82 C 348.66 314.30 349.49 315.80 350.26 317.33 C 351.02 318.86 351.73 320.42 352.38 322.00 C 353.03 323.58 353.62 325.18 354.15 326.81 C 354.68 328.44 355.20 330.07 355.57 331.76 C 355.95 333.46 356.27 335.22 356.41 336.96 C 356.55 338.70 356.57 340.47 356.41 342.20 C 356.26 343.92 355.93 345.66 355.48 347.31 C 355.03 348.97 354.46 350.58 353.71 352.12 C 352.96 353.66 352.05 355.20 351.00 356.54 C 349.95 357.88 348.73 359.12 347.38 360.16 C 346.04 361.20 344.50 362.11 342.92 362.77 C 341.35 363.43 339.64 363.84 337.94 364.13 C 336.24 364.42 334.48 364.51 332.72 364.50 C 330.96 364.49 329.13 364.34 327.39 364.09 C 325.66 363.83 323.97 363.20 322.31 362.98 C 320.64 362.75 318.88 362.52 317.41 362.74 C 315.94 362.95 314.65 363.41 313.47 364.28 C 312.29 365.16 311.33 366.65 310.33 367.99 C 309.33 369.34 308.50 370.94 307.46 372.35 C 306.41 373.76 305.31 375.21 304.04 376.45 C 302.78 377.68 301.33 378.81 299.87 379.76 C 298.42 380.71 296.92 381.56 295.31 382.14 C 293.71 382.72 291.95 383.07 290.23 383.25 C 288.51 383.44 286.71 383.44 284.99 383.25 C 283.27 383.07 281.52 382.72 279.91 382.14 C 278.29 381.57 276.79 380.75 275.32 379.82 C 273.86 378.89 272.44 377.76 271.13 376.56 C 269.81 375.36 268.57 373.99 267.43 372.63 C 266.29 371.26 265.21 369.85 264.29 368.38 C 263.38 366.91 262.67 365.36 261.94 363.81 C 261.22 362.26 260.55 360.69 259.96 359.09 C 259.37 357.48 258.89 355.83 258.39 354.19 C 257.89 352.55 257.40 350.91 256.98 349.23 C 256.55 347.56 256.17 345.87 255.87 344.15 C 255.56 342.43 255.31 340.68 255.13 338.91 C 254.94 337.14 254.82 335.34 254.76 333.52 C 254.69 331.70 254.69 329.80 254.76 327.97 C 254.82 326.15 254.94 324.35 255.13 322.58 C 255.31 320.81 255.56 319.07 255.87 317.34 C 256.17 315.62 256.58 313.95 256.98 312.26 C 257.37 310.57 257.76 308.89 258.21 307.23 C 258.66 305.57 259.14 303.91 259.69 302.30 C 260.24 300.68 260.84 299.07 261.54 297.52 C 262.24 295.96 263.04 294.44 263.89 292.95 C 264.75 291.45 265.65 289.98 266.67 288.55 C 267.70 287.13 268.83 285.69 270.03 284.42 C 271.24 283.14 272.53 281.96 273.91 280.91 C 275.29 279.87 276.78 278.92 278.31 278.15 C 279.84 277.38 281.44 276.78 283.09 276.30 C 284.73 275.82 286.47 275.43 288.20 275.25 Z"/>
-    </defs>
-    <g class="grow">
-      <g class="sway">
-        <path class="branch" pathLength="1"
-          d="M 60 352 C 110 330, 150 296, 186 254 S 258 158, 330 108"/>
-        <path class="twig t1" pathLength="1" d="M 148 300 C 134 286, 124 268, 120 250"/>
-        <path class="twig t2" pathLength="1" d="M 214 220 C 230 214, 248 212, 262 216"/>
-        <path class="twig t3" pathLength="1" d="M 282 148 C 274 132, 270 114, 270 100"/>
-        <g class="pop p1"><use href="#figleaf" transform="translate(120,252) rotate(-44) scale(0.44) translate(-305.7,-380)"/></g>
-        <g class="pop p2"><ellipse cx="178" cy="246" rx="12" ry="17" transform="rotate(9 178 262)"/></g>
-        <g class="pop p3"><use href="#figleaf" transform="translate(263,217) rotate(48) scale(0.38) translate(-305.7,-380)"/></g>
-        <g class="pop p4"><ellipse cx="269" cy="82" rx="13" ry="18" transform="rotate(-7 269 98)"/></g>
-        <g class="pop p5"><ellipse cx="336" cy="92" rx="14" ry="19" transform="rotate(7 336 110)"/></g>
+<svg class="scene" viewBox="0 0 480 480" aria-hidden="true">
+    <g class="cycle">
+      <circle class="ring" cx="240" cy="240" r="208"/>
+      <g transform="translate(70,410) rotate(-45)" fill="#2C9F28">
+        <path class="branch" d="M 9.0 -31.7 L 323.0 -15.9 Q 330.0 -15.5 330.0 -8.5 L 330.0 8.5 Q 330.0 15.5 323.0 15.9 L 9.0 31.7 Q 0.0 32.0 0.0 23.0 L 0.0 -23.0 Q 0.0 -32.0 9.0 -31.7 Z"/>
       </g>
+      <g class="fruit pop"><ellipse cx="235" cy="123" rx="36" ry="53" fill="#2C9F28" transform="rotate(7 235 123)"/></g>
+      <path class="leaf pop" d="M 288.20 275.25 C 289.92 275.08 291.69 275.13 293.44 275.25 C 295.18 275.38 296.98 275.62 298.67 275.99 C 300.37 276.36 301.98 276.94 303.61 277.47 C 305.23 278.00 306.86 278.55 308.44 279.19 C 310.02 279.83 311.55 280.60 313.10 281.32 C 314.65 282.05 316.22 282.72 317.72 283.54 C 319.23 284.37 320.70 285.29 322.14 286.26 C 323.59 287.24 324.99 288.32 326.39 289.40 C 327.79 290.48 329.17 291.60 330.54 292.75 C 331.91 293.90 333.31 295.08 334.62 296.30 C 335.92 297.52 337.19 298.75 338.38 300.07 C 339.58 301.39 340.70 302.81 341.78 304.21 C 342.87 305.61 343.89 307.03 344.89 308.47 C 345.88 309.90 346.87 311.34 347.76 312.82 C 348.66 314.30 349.49 315.80 350.26 317.33 C 351.02 318.86 351.73 320.42 352.38 322.00 C 353.03 323.58 353.62 325.18 354.15 326.81 C 354.68 328.44 355.20 330.07 355.57 331.76 C 355.95 333.46 356.27 335.22 356.41 336.96 C 356.55 338.70 356.57 340.47 356.41 342.20 C 356.26 343.92 355.93 345.66 355.48 347.31 C 355.03 348.97 354.46 350.58 353.71 352.12 C 352.96 353.66 352.05 355.20 351.00 356.54 C 349.95 357.88 348.73 359.12 347.38 360.16 C 346.04 361.20 344.50 362.11 342.92 362.77 C 341.35 363.43 339.64 363.84 337.94 364.13 C 336.24 364.42 334.48 364.51 332.72 364.50 C 330.96 364.49 329.13 364.34 327.39 364.09 C 325.66 363.83 323.97 363.20 322.31 362.98 C 320.64 362.75 318.88 362.52 317.41 362.74 C 315.94 362.95 314.65 363.41 313.47 364.28 C 312.29 365.16 311.33 366.65 310.33 367.99 C 309.33 369.34 308.50 370.94 307.46 372.35 C 306.41 373.76 305.31 375.21 304.04 376.45 C 302.78 377.68 301.33 378.81 299.87 379.76 C 298.42 380.71 296.92 381.56 295.31 382.14 C 293.71 382.72 291.95 383.07 290.23 383.25 C 288.51 383.44 286.71 383.44 284.99 383.25 C 283.27 383.07 281.52 382.72 279.91 382.14 C 278.29 381.57 276.79 380.75 275.32 379.82 C 273.86 378.89 272.44 377.76 271.13 376.56 C 269.81 375.36 268.57 373.99 267.43 372.63 C 266.29 371.26 265.21 369.85 264.29 368.38 C 263.38 366.91 262.67 365.36 261.94 363.81 C 261.22 362.26 260.55 360.69 259.96 359.09 C 259.37 357.48 258.89 355.83 258.39 354.19 C 257.89 352.55 257.40 350.91 256.98 349.23 C 256.55 347.56 256.17 345.87 255.87 344.15 C 255.56 342.43 255.31 340.68 255.13 338.91 C 254.94 337.14 254.82 335.34 254.76 333.52 C 254.69 331.70 254.69 329.80 254.76 327.97 C 254.82 326.15 254.94 324.35 255.13 322.58 C 255.31 320.81 255.56 319.07 255.87 317.34 C 256.17 315.62 256.58 313.95 256.98 312.26 C 257.37 310.57 257.76 308.89 258.21 307.23 C 258.66 305.57 259.14 303.91 259.69 302.30 C 260.24 300.68 260.84 299.07 261.54 297.52 C 262.24 295.96 263.04 294.44 263.89 292.95 C 264.75 291.45 265.65 289.98 266.67 288.55 C 267.70 287.13 268.83 285.69 270.03 284.42 C 271.24 283.14 272.53 281.96 273.91 280.91 C 275.29 279.87 276.78 278.92 278.31 278.15 C 279.84 277.38 281.44 276.78 283.09 276.30 C 284.73 275.82 286.47 275.43 288.20 275.25 Z" fill="#2C9F28" stroke="#2C9F28" stroke-width="6" stroke-linejoin="round" transform="translate(-4.95,-4.95)"/>
     </g>
   </svg>
-  <h1>Fig is generating<span class="dots"><span>.</span><span>.</span><span>.</span></span></h1>
-  <p class="muted">${what}</p>
+  <h1 id="title">Fig is generating<span class="dots"><span>.</span><span>.</span><span>.</span></span></h1>
+  <p class="status" id="status">${esc(initial)}</p>
   <p class="elapsed" id="elapsed"></p>
-  </div>
+  <button class="view-btn" id="viewBtn">View revised page</button>
   <button class="calm" onclick="document.documentElement.classList.toggle('paused')">Pause</button>
 <script>
 (function () {
   var slug = ${JSON.stringify(slug)};
   var startedAt = ${JSON.stringify(st.startedAt || null)};
   var t0 = startedAt ? new Date(startedAt).getTime() : Date.now();
+  var ready = false;
+  var st = document.getElementById("status");
   var el = document.getElementById("elapsed");
   setInterval(function () {
+    if (ready) return;
     var s = Math.max(0, Math.floor((Date.now() - t0) / 1000));
     el.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
   }, 1000);
 
-  var finished = false;
-  function finish(phase) {
-    if (finished) return;
-    finished = true;
-    if (phase === "done") {
-      document.getElementById("wrap").style.opacity = "0";
-      setTimeout(function () { location.replace("/pages/" + slug + "/"); }, 180);
-    } else {
-      location.reload(); // figd serves the error page once state is error
-    }
+  function setStatus(text) {
+    if (!text || st.textContent === text || ready) return;
+    st.classList.add("swap");
+    setTimeout(function () { st.textContent = text; st.classList.remove("swap"); }, 250);
+  }
+  function finish(state) {
+    if (ready) return;
+    if (state.phase === "error") { location.reload(); return; } // figd serves the error page
+    ready = true;
+    document.body.classList.add("ready");
+    document.getElementById("title").textContent = "Your fig is ready";
+    st.classList.remove("swap");
+    st.textContent = "The revised page is waiting.";
   }
   function check(state) {
-    if (state && (state.phase === "done" || state.phase === "error")) finish(state.phase);
+    if (!state) return;
+    if (state.phase === "done" || state.phase === "error") finish(state);
+    else setStatus(state.status);
   }
+  document.getElementById("viewBtn").addEventListener("click", function () {
+    location.href = "/pages/" + slug + "/";
+  });
 
   // Push: instant. Poll: safety net.
   try {
@@ -470,6 +626,7 @@ function generatingPage(slug, st) {
     };
   } catch (e) { /* fall through to polling */ }
   setInterval(function () {
+    if (ready) return;
     fetch("/jobs/" + slug + "/state").then(function (r) { return r.json(); }).then(check).catch(function () {});
   }, 1500);
 })();
@@ -563,6 +720,21 @@ async function handle(req, res) {
     const slug = slugify(payload.title);
     const jobDir = path.join(JOBS, slug);
     fs.mkdirSync(jobDir, { recursive: true });
+    // Fig on a Fig result: the change log tracks EVERY round, page to page.
+    // The parent's accumulated history + its own changes ride forward.
+    try {
+      const seg = String(payload.url || "").match(/\/([a-z0-9-]+)\/?(?:[?#].*)?$/);
+      const parent = seg && seg[1] !== slug ? path.join(JOBS, seg[1]) : null;
+      if (parent && fs.existsSync(path.join(parent, "annotations.json"))) {
+        const hist = [];
+        try { hist.push(...JSON.parse(fs.readFileSync(path.join(parent, "history.json"), "utf8"))); } catch { /* first chain link */ }
+        try {
+          const pc = JSON.parse(fs.readFileSync(path.join(parent, "changes.json"), "utf8"));
+          if (Array.isArray(pc) && pc.length) hist.push({ job: seg[1], changes: pc });
+        } catch { /* parent had no changelog */ }
+        if (hist.length) fs.writeFileSync(path.join(jobDir, "history.json"), JSON.stringify(hist, null, 2));
+      }
+    } catch { /* history is best-effort, never blocks a dispatch */ }
     let baseHash = null;
     if (isPdf) {
       fs.writeFileSync(path.join(jobDir, "source.pdf"), Buffer.from(payload.pdfBase64, "base64"));
@@ -587,6 +759,56 @@ async function handle(req, res) {
     runGeneration(jobDir, settings);
     res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders(req) });
     res.end(JSON.stringify({ job: slug, statusUrl: `http://127.0.0.1:${PORT}/jobs/${slug}/` }));
+    return;
+  }
+
+
+  // Settings UI. GET renders the form; POST (token-gated via a hidden field —
+  // other origins can blind-POST to loopback but can't READ this page to steal
+  // the token, so the field is the CSRF gate) updates ~/.fig/settings.json.
+  if (url.pathname === "/settings") {
+    if (req.method === "POST") {
+      const body = new URLSearchParams(await readBody(req, 64 * 1024));
+      if (body.get("token") !== settings.token) {
+        res.writeHead(403); res.end("bad token"); return;
+      }
+      const next = loadSettings();
+      next.target = body.get("target") === "vercel" ? "vercel" : "localhost";
+      next.reviewOverlay = body.get("reviewOverlay") === "on";
+      fs.writeFileSync(SETTINGS_PATH, JSON.stringify(next, null, 2));
+      res.writeHead(302, { Location: "/settings?saved=1" });
+      res.end();
+      return;
+    }
+    const saved = url.searchParams.get("saved") === "1";
+    const isVercel = settings.target === "vercel";
+    const overlayOn = settings.reviewOverlay !== false;
+    res.writeHead(200, { "Content-Type": "text/html" });
+    res.end(page("Fig — settings", `
+<h1>Settings</h1>
+${saved ? '<p style="color:#2C9F28;font-size:14px;">Saved.</p>' : ""}
+<form method="POST" action="/settings" style="line-height:1.7;">
+  <input type="hidden" name="token" value="${esc(settings.token)}">
+  <h2 style="font-size:15px;font-weight:600;margin:28px 0 6px;">Where results open</h2>
+  <label style="display:block;margin:10px 0;cursor:pointer;">
+    <input type="radio" name="target" value="localhost" ${isVercel ? "" : "checked"}>
+    <b>This computer only</b>
+    <span class="muted" style="display:block;margin-left:22px;">Revised pages stay on this machine and open from this local address. Nothing is published.</span>
+  </label>
+  <label style="display:block;margin:10px 0;cursor:pointer;">
+    <input type="radio" name="target" value="vercel" ${isVercel ? "checked" : ""}>
+    <b>Also publish to the web</b>
+    <span class="muted" style="display:block;margin-left:22px;">Each revised page is additionally deployed to the shared review site, at a URL anyone can open. The link appears next to the job on the <a href="/">home page</a>.</span>
+  </label>
+  <h2 style="font-size:15px;font-weight:600;margin:28px 0 6px;">Team review</h2>
+  <label style="display:block;margin:10px 0;cursor:pointer;">
+    <input type="checkbox" name="reviewOverlay" ${overlayOn ? "checked" : ""}>
+    <b>Add review tools to published pages</b>
+    <span class="muted" style="display:block;margin-left:22px;">Published pages carry comment pins, text highlights, and drawing — teammates leave feedback on the page itself from a plain link, nothing to install. Their comments are shared and persist across redeploys.</span>
+  </label>
+  <p style="margin-top:24px;"><button type="submit" style="background:#2C9F28;color:#fafaf8;border:none;border-radius:9px;padding:10px 22px;font-family:inherit;font-size:14px;cursor:pointer;">Save</button></p>
+</form>
+<p class="muted" style="font-size:12px;margin-top:32px;">Settings file: ~/.fig/settings.json · <a href="/">All figs</a></p>`));
     return;
   }
 
@@ -664,6 +886,7 @@ async function handle(req, res) {
     if (!fs.existsSync(file)) { res.writeHead(404); res.end("not found"); return; }
     let html = fs.readFileSync(file, "utf8");
     if (!m[2]) html = injectChangelog(jobDir, html);
+    html = injectFavicon(html);
     res.writeHead(200, { "Content-Type": "text/html" });
     res.end(html);
     return;
@@ -686,7 +909,7 @@ async function handle(req, res) {
       })
       .join("\n");
     res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(page("Fig", `<h1>Fig</h1><p class="muted">Target: ${settings.target}</p><ul>${rows || "<li class='muted'>No figs yet</li>"}</ul>`));
+    res.end(page("Fig", `<h1>Fig</h1><p class="muted">Results open: ${settings.target === "vercel" ? "here + published to the web" : "this computer only"} · <a href="/settings">Settings</a></p><ul>${rows || "<li class='muted'>No figs yet</li>"}</ul>`));
     return;
   }
 
