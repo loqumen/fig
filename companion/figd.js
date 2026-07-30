@@ -226,7 +226,8 @@ function runGeneration(jobDir, settings) {
     writeState(jobDir, { phase: "done", finishedAt: new Date().toISOString() });
     if (fs.existsSync(path.join(jobDir, "source.pdf"))) printPdf(jobDir);
     const settingsNow = loadSettings();
-    if (settingsNow.target === "vercel") deployToVercel(jobDir, settingsNow);
+    if (settingsNow.target === "vercel") deployToVercel(jobDir, settingsNow); // legacy edits-project mode
+    else if (settingsNow.target === "linked") publishToLinked(jobDir);
   });
 }
 
@@ -291,6 +292,42 @@ function printPdf(jobDir) {
 // build-overlay.py (sentinel split, stabilizer CSS, load-time init — rules
 // that each carry failure history live THERE, not re-implemented here).
 // data-fig-version is the job slug, so comments persist across redeploys.
+const { injectOverlay } = require("./inject-overlay.js");
+const PUBLISH_STATE = path.join(FIG_HOME, "publish.json");
+const PIN = { cloudflare: "wrangler@4.112.0", vercel: "vercel@56.3.2" };
+
+function publishState() {
+  try { return JSON.parse(fs.readFileSync(PUBLISH_STATE, "utf8")); } catch { return null; }
+}
+
+// Publish a finished job to the user's LINKED review site (BYO hosting:
+// their own Cloudflare or Vercel account, scaffolded by fig-link.js).
+function publishToLinked(jobDir) {
+  const ps = publishState();
+  if (!ps || ps.status !== "linked" || !ps.dir) return;
+  try {
+    const slug = path.basename(jobDir);
+    let html = injectFavicon(injectChangelog(jobDir, fs.readFileSync(path.join(jobDir, "edited.html"), "utf8")));
+    html = injectOverlay(html, { version: slug, clearMine: true });
+    const dest = path.join(ps.dir, "public", slug);
+    fs.mkdirSync(dest, { recursive: true });
+    fs.writeFileSync(path.join(dest, "index.html"), html);
+    const args = ps.provider === "cloudflare"
+      ? ["--yes", PIN.cloudflare, "deploy"]
+      : ["--yes", PIN.vercel, "deploy", "--prod", "--yes"];
+    execFile("npx", args, { cwd: ps.dir }, (err, stdout) => {
+      const url = ps.url ? `${ps.url.replace(/\/$/, "")}/${slug}/` : "";
+      fs.writeFileSync(
+        path.join(jobDir, "deploy.txt"),
+        err ? "Publish failed: " + String(err.message).slice(0, 300)
+            : `Published: ${url} \u00b7 team review comments enabled`
+      );
+    });
+  } catch (e) {
+    fs.writeFileSync(path.join(jobDir, "deploy.txt"), "Publish failed: " + e.message);
+  }
+}
+
 const BUILD_OVERLAY = path.join(os.homedir(), "CLAUDE/tools/fig/build-overlay.py");
 const EDITS_DIR_DEFAULT = path.join(os.homedir(), "Desktop", "edits");
 
@@ -766,49 +803,76 @@ async function handle(req, res) {
   // Settings UI. GET renders the form; POST (token-gated via a hidden field —
   // other origins can blind-POST to loopback but can't READ this page to steal
   // the token, so the field is the CSRF gate) updates ~/.fig/settings.json.
+  // POST with action=link spawns fig-link.js for the chosen provider.
   if (url.pathname === "/settings") {
     if (req.method === "POST") {
       const body = new URLSearchParams(await readBody(req, 64 * 1024));
       if (body.get("token") !== settings.token) {
         res.writeHead(403); res.end("bad token"); return;
       }
+      if (body.get("action") === "link") {
+        const provider = body.get("provider") === "vercel" ? "vercel" : "cloudflare";
+        const child = spawn(process.execPath, [path.join(__dirname, "fig-link.js"), provider], {
+          detached: true, stdio: "ignore",
+          env: { ...process.env, PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].join(":") },
+        });
+        child.unref();
+        res.writeHead(302, { Location: "/settings" });
+        res.end();
+        return;
+      }
       const next = loadSettings();
-      next.target = body.get("target") === "vercel" ? "vercel" : "localhost";
-      next.reviewOverlay = body.get("reviewOverlay") === "on";
+      next.target = body.get("target") === "linked" ? "linked"
+        : body.get("target") === "vercel" ? "vercel" : "localhost";
       fs.writeFileSync(SETTINGS_PATH, JSON.stringify(next, null, 2));
       res.writeHead(302, { Location: "/settings?saved=1" });
       res.end();
       return;
     }
     const saved = url.searchParams.get("saved") === "1";
-    const isVercel = settings.target === "vercel";
-    const overlayOn = settings.reviewOverlay !== false;
-    res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(page("Fig — settings", `
+    const ps = publishState();
+    const linked = ps && ps.status === "linked";
+    const linking = ps && ps.status === "linking";
+    const t = settings.target;
+    const legacy = t === "vercel";
+    res.writeHead(200, { "Content-Type": "text/html", ...(linking ? { Refresh: "3" } : {}) });
+    res.end(page("Fig \u2014 settings", `
 <h1>Settings</h1>
 ${saved ? '<p style="color:#2C9F28;font-size:14px;">Saved.</p>' : ""}
 <form method="POST" action="/settings" style="line-height:1.7;">
   <input type="hidden" name="token" value="${esc(settings.token)}">
   <h2 style="font-size:15px;font-weight:600;margin:28px 0 6px;">Where results open</h2>
   <label style="display:block;margin:10px 0;cursor:pointer;">
-    <input type="radio" name="target" value="localhost" ${isVercel ? "" : "checked"}>
+    <input type="radio" name="target" value="localhost" ${t === "localhost" ? "checked" : ""}>
     <b>This computer only</b>
-    <span class="muted" style="display:block;margin-left:22px;">Revised pages stay on this machine and open from this local address. Nothing is published.</span>
+    <span class="muted" style="display:block;margin-left:22px;">Revised pages stay on this machine. Nothing is published.</span>
   </label>
-  <label style="display:block;margin:10px 0;cursor:pointer;">
-    <input type="radio" name="target" value="vercel" ${isVercel ? "checked" : ""}>
-    <b>Also publish to the web</b>
-    <span class="muted" style="display:block;margin-left:22px;">Each revised page is additionally deployed to the shared review site, at a URL anyone can open. The link appears next to the job on the <a href="/">home page</a>.</span>
+  <label style="display:block;margin:10px 0;cursor:${linked || legacy ? "pointer" : "not-allowed"};${linked || legacy ? "" : "opacity:.55;"}">
+    <input type="radio" name="target" value="${legacy ? "vercel" : "linked"}" ${t === "linked" || legacy ? "checked" : ""} ${linked || legacy ? "" : "disabled"}>
+    <b>Also publish for team review</b>
+    <span class="muted" style="display:block;margin-left:22px;">Each revised page also deploys to your linked review site \u2014 a link anyone can open, with comment, highlight, and drawing tools on the page. Reviewers can each delete only their own feedback.${linked ? ` Linked: <a href="${esc(ps.url)}">${esc(ps.url.replace("https://", ""))}</a> (${esc(ps.provider)})` : legacy ? " Using the legacy edits project." : " Link a site below to enable."}</span>
   </label>
-  <h2 style="font-size:15px;font-weight:600;margin:28px 0 6px;">Team review</h2>
-  <label style="display:block;margin:10px 0;cursor:pointer;">
-    <input type="checkbox" name="reviewOverlay" ${overlayOn ? "checked" : ""}>
-    <b>Add review tools to published pages</b>
-    <span class="muted" style="display:block;margin-left:22px;">Published pages carry comment pins, text highlights, and drawing — teammates leave feedback on the page itself from a plain link, nothing to install. Their comments are shared and persist across redeploys.</span>
-  </label>
-  <p style="margin-top:24px;"><button type="submit" style="background:#2C9F28;color:#fafaf8;border:none;border-radius:9px;padding:10px 22px;font-family:inherit;font-size:14px;cursor:pointer;">Save</button></p>
+  <p style="margin-top:18px;"><button type="submit" style="background:#2C9F28;color:#fafaf8;border:none;border-radius:9px;padding:10px 22px;font-family:inherit;font-size:14px;cursor:pointer;">Save</button></p>
 </form>
-<p class="muted" style="font-size:12px;margin-top:32px;">Settings file: ~/.fig/settings.json · <a href="/">All figs</a></p>`));
+${linked || legacy ? "" : `
+<h2 style="font-size:15px;font-weight:600;margin:28px 0 6px;">Link a review site</h2>
+${linking ? `<p class="muted">Linking\u2026 ${esc((ps && ps.step) || "")} <span style="color:#9a9790;">(this page refreshes itself; a browser sign-in window may open)</span></p>` : `
+<p class="muted" style="font-size:13px;">The review site runs in YOUR OWN hosting account \u2014 your pages and your team's comments never touch anyone else's infrastructure. Both options have free tiers; setup is one sign-in.</p>
+<form method="POST" action="/settings" style="margin-top:8px;">
+  <input type="hidden" name="token" value="${esc(settings.token)}">
+  <input type="hidden" name="action" value="link">
+  <label style="display:block;margin:8px 0;cursor:pointer;">
+    <input type="radio" name="provider" value="cloudflare" checked>
+    <b>Cloudflare</b> <span class="muted">\u2014 recommended: free tier allows commercial use, unlimited page views</span>
+  </label>
+  <label style="display:block;margin:8px 0;cursor:pointer;">
+    <input type="radio" name="provider" value="vercel">
+    <b>Vercel</b> <span class="muted">\u2014 familiar if you already use it; its free Hobby tier is for personal, non-commercial use (work use needs a paid Vercel plan)</span>
+  </label>
+  <p style="margin-top:12px;"><button type="submit" style="background:#1a1a1a;color:#fafaf8;border:none;border-radius:9px;padding:9px 18px;font-family:inherit;font-size:13px;cursor:pointer;">Link review site</button></p>
+</form>`}
+${ps && ps.status === "error" ? `<p style="color:#8a3b2e;font-size:13px;">Link failed: ${esc(ps.error || "")}</p>` : ""}`}
+<p class="muted" style="font-size:12px;margin-top:32px;">Settings file: ~/.fig/settings.json \u00b7 <a href="/">All figs</a></p>`));
     return;
   }
 

@@ -180,14 +180,16 @@ echo "== T12 settings page =="
 curl -s "http://127.0.0.1:$PORT/settings" | grep -q "Where results open" && ok "GET /settings renders" || bad "settings page missing"
 C=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$PORT/settings" --data "token=wrong&target=vercel")
 check "settings POST bad token → 403" "$C" "403"
-curl -s -o /dev/null -X POST "http://127.0.0.1:$PORT/settings" --data "token=testtoken123&target=vercel&reviewOverlay=on"
+curl -s -o /dev/null -X POST "http://127.0.0.1:$PORT/settings" --data "token=testtoken123&target=vercel"
 python3 -c "
 import json;d=json.load(open('$T/home/.fig/settings.json'))
-assert d['target']=='vercel' and d['reviewOverlay'] is True, d" && ok "settings POST persists" || bad "settings not saved"
+assert d['target']=='vercel', d" && ok "settings POST persists" || bad "settings not saved"
 curl -s -o /dev/null -X POST "http://127.0.0.1:$PORT/settings" --data "token=testtoken123&target=localhost"
 python3 -c "
 import json;d=json.load(open('$T/home/.fig/settings.json'))
-assert d['target']=='localhost' and d['reviewOverlay'] is False, d" && ok "settings toggle back persists" || bad "toggle back failed"
+assert d['target']=='localhost', d" && ok "settings toggle back persists" || bad "toggle back failed"
+curl -s "http://127.0.0.1:$PORT/settings" | grep -q "Link a review site" && ok "provider link section renders" || bad "link section missing"
+curl -s "http://127.0.0.1:$PORT/settings" | grep -qi "cloudflare" && ok "provider options present" || bad "providers missing"
 
 kill $FIGD_PID 2>/dev/null
 echo
