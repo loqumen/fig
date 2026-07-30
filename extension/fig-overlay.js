@@ -12,7 +12,7 @@
   // guard would keep running stale code forever. On a version mismatch,
   // tear the old overlay down (its toggle detaches its own listeners) and
   // let this file rebuild fresh.
-  const FIG_VERSION = 6;
+  const FIG_VERSION = 9;
   if (window.__figToggle && window.__figVersion !== FIG_VERSION) {
     if (document.querySelector(".fig-toolbar")) { try { window.__figToggle(); } catch { /* stale */ } }
     window.__figToggle = null;
@@ -99,6 +99,11 @@
   };
 
   const setMode = (mode) => {
+    // Leaving a mode dismisses its floating editors: an unsaved comment box
+    // (or highlight note — closeNote cancels the provisional highlight) must
+    // not stay hovering after the tool is switched.
+    closeNote();
+    closeDetail();
     state.mode = state.mode === mode ? null : mode;
     document.body.classList.toggle("fig-mode-comment", state.mode === "comment");
     document.body.classList.toggle("fig-mode-highlight", state.mode === "highlight");
@@ -158,12 +163,17 @@
     actions.append(cancel, save);
     box.append(ta, actions);
     document.body.appendChild(box);
+    state.ui.noteCancel = (opts && opts.onCancel) || null;
     ta.focus();
     const finish = (commit) => {
       const v = ta.value.trim();
       box.remove();
       state.ui.note = null;
+      state.ui.noteCancel = null;
       if (commit && v) onSave(v);
+      // Not saved (cancelled, Escape, or empty): let the caller undo any
+      // provisional visuals — an unsaved highlight must not stick.
+      else if (opts && opts.onCancel) opts.onCancel();
     };
     save.addEventListener("click", () => finish(true));
     cancel.addEventListener("click", () => finish(false));
@@ -174,7 +184,146 @@
     state.ui.note = box;
   };
 
-  const closeNote = () => { if (state.ui.note) { state.ui.note.remove(); state.ui.note = null; } };
+  // Closing an unsaved note fires its onCancel, so a provisional highlight
+  // whose editor gets dismissed any way at all (new note opened, detail
+  // opened, teardown) is removed rather than stranded noteless.
+  const closeNote = () => {
+    if (!state.ui.note) return;
+    state.ui.note.remove();
+    state.ui.note = null;
+    const c = state.ui.noteCancel;
+    state.ui.noteCancel = null;
+    if (c) c();
+  };
+
+  // ---------- detail popover (mirrors the /fig skill's comment detail) ----------
+  // One popover for pins AND highlights: the saved note, its replies, a reply
+  // input, and Edit / Delete. Opened by clicking a pin or a highlight mark.
+
+  const closeDetail = () => { if (state.ui.detail) { state.ui.detail.remove(); state.ui.detail = null; } };
+
+  const el = (tag, cls, text) => {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    n.setAttribute("data-fig-ui", "1");
+    return n;
+  };
+
+  // item: a comment ({text, replies}) or a highlight ({text: quote, note, replies}).
+  // opts: {kind: 'comment'|'highlight', anchorRect, onDelete, getBody, setBody}
+  const openDetail = (item, opts) => {
+    closeNote();
+    closeDetail();
+    if (!item.replies) item.replies = [];
+    const box = el("div", "fig-note fig-detail");
+    const r = opts.anchorRect;
+    box.style.left = Math.min(window.scrollX + r.left, window.scrollX + window.innerWidth - 300) + "px";
+    box.style.top = window.scrollY + r.bottom + 8 + "px";
+
+    const render = () => {
+      box.replaceChildren();
+      if (opts.kind === "highlight") {
+        box.appendChild(el("div", "fig-detail-quote", "“" + (item.text || "").slice(0, 160) + "”"));
+      }
+      const body = el("div", "fig-detail-text", opts.getBody());
+      box.appendChild(body);
+      if (item.replies.length) {
+        const list = el("div", "fig-detail-replies");
+        item.replies.forEach((rep, i) => {
+          const row = el("div", "fig-detail-reply");
+          row.appendChild(el("span", "fig-detail-reply-text", rep));
+          const x = el("button", "fig-detail-reply-x", "×");
+          x.title = "Delete reply";
+          x.addEventListener("click", () => { item.replies.splice(i, 1); render(); });
+          row.appendChild(x);
+          list.appendChild(row);
+        });
+        box.appendChild(list);
+      }
+      const reply = document.createElement("textarea");
+      reply.setAttribute("data-fig-ui", "1");
+      reply.className = "fig-detail-replybox";
+      reply.rows = 1;
+      reply.placeholder = "Reply…";
+      reply.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+          e.preventDefault();
+          const v = reply.value.trim();
+          if (v) { item.replies.push(v); render(); }
+        }
+        if (e.key === "Escape") closeDetail();
+      });
+      box.appendChild(reply);
+
+      const actions = el("div", "fig-note-actions");
+      const del = el("button", "fig-delete", "Delete");
+      del.addEventListener("click", () => { closeDetail(); opts.onDelete(); });
+      const edit = el("button", null, "Edit");
+      edit.addEventListener("click", () => {
+        // Swap the body for an editor in place (the /fig skill's Edit flow).
+        const ta = document.createElement("textarea");
+        ta.setAttribute("data-fig-ui", "1");
+        ta.value = opts.getBody();
+        body.replaceWith(ta);
+        actions.style.display = "none";
+        ta.focus();
+        ta.setSelectionRange(ta.value.length, ta.value.length);
+        const done = (commit) => {
+          const v = ta.value.trim();
+          if (commit && v) opts.setBody(v);
+          render();
+        };
+        const eActions = el("div", "fig-note-actions");
+        const cancel = el("button", null, "Cancel");
+        cancel.addEventListener("click", () => done(false));
+        const save = el("button", "fig-save", "Save");
+        save.addEventListener("click", () => done(true));
+        eActions.append(cancel, save);
+        actions.after(eActions);
+        ta.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); done(true); }
+          if (e.key === "Escape") { e.preventDefault(); done(false); }
+        });
+      });
+      actions.append(del, edit);
+      box.appendChild(actions);
+    };
+
+    render();
+    document.body.appendChild(box);
+    state.ui.detail = box;
+  };
+
+  const highlightById = (id) => state.highlights.find((h) => String(h.id) === String(id));
+
+  // Click a highlight mark → open its comment (any mode; draw is unreachable
+  // because the canvas owns the pointer there).
+  const openHighlightDetail = (mark) => {
+    const h = highlightById(mark.getAttribute("data-fig-highlight"));
+    if (!h) return;
+    openDetail(h, {
+      kind: "highlight",
+      anchorRect: mark.getBoundingClientRect(),
+      getBody: () => h.note || "",
+      setBody: (v) => { h.note = v; },
+      onDelete: () => removeHighlight(h.id),
+    });
+  };
+
+  const unwrapMarks = (id) => {
+    document.querySelectorAll('mark[data-fig-highlight="' + id + '"]').forEach((m) => {
+      const p = m.parentNode;
+      m.replaceWith(...m.childNodes);
+      if (p) p.normalize();
+    });
+  };
+
+  const removeHighlight = (id) => {
+    state.highlights = state.highlights.filter((h) => h.id !== id);
+    unwrapMarks(id);
+    toast("Highlight removed");
+  };
 
   // ---------- comments ----------
 
@@ -196,11 +345,11 @@
     pin.title = c.text + " (click to open)";
     pin.addEventListener("click", (e) => {
       e.stopPropagation();
-      openNote(c.x, c.y, (text) => {
-        c.text = text;
-        pin.title = text + " (click to open)";
-      }, {
-        value: c.text,
+      openDetail(c, {
+        kind: "comment",
+        anchorRect: pin.getBoundingClientRect(),
+        getBody: () => c.text,
+        setBody: (v) => { c.text = v; pin.title = v + " (click to open)"; },
         onDelete: () => {
           state.comments = state.comments.filter((k) => k.id !== c.id);
           state.ui.pins.delete(c.id);
@@ -218,6 +367,17 @@
   const onPageClick = (e) => {
     if (!state.on) return;
     if (e.target.closest("[data-fig-ui]")) return;
+    // A highlight is clickable in every mode: the green mark opens its
+    // comment (highlight mode handles this at mousedown instead).
+    const mk = e.target.closest && e.target.closest("mark[data-fig-highlight]");
+    if (mk && state.mode !== "highlight") {
+      e.preventDefault();
+      e.stopPropagation();
+      openHighlightDetail(mk);
+      return;
+    }
+    // Clicking anywhere else dismisses an open comment popover.
+    if (state.ui.detail) closeDetail();
     // In highlight mode the page must not react to the selection gesture
     // (links navigating, accordions toggling mid-drag).
     if (state.mode === "highlight") { e.preventDefault(); e.stopPropagation(); return; }
@@ -238,6 +398,14 @@
     });
   };
 
+  const onKeydown = (e) => {
+    if (e.key !== "Escape") return;
+    // The note editor's own textarea handles its Escape (and stops here via
+    // the editor being focused); this catches Esc pressed on the page.
+    if (e.target && e.target.closest && e.target.closest("[data-fig-ui]")) return;
+    if (state.ui.detail) { closeDetail(); e.stopPropagation(); }
+  };
+
   // ---------- highlights (suggest) ----------
 
   const wrapRangeTextNodes = (range, id) => {
@@ -252,6 +420,9 @@
     const marks = [];
     for (const node of nodes) {
       if (node.parentElement && node.parentElement.closest("[data-fig-ui]")) continue;
+      // Never nest a mark inside an existing highlight — re-highlighting a
+      // highlighted stretch opens the existing comment instead (see onMouseUp).
+      if (node.parentElement && node.parentElement.closest("mark[data-fig-highlight]")) continue;
       let start = 0, end = node.data.length;
       if (node === range.startContainer) start = range.startOffset;
       if (node === range.endContainer) end = range.endOffset;
@@ -278,6 +449,15 @@
   const onMouseDown = (e) => {
     if (!state.on || state.mode !== "highlight") return;
     if (e.target && e.target.closest && e.target.closest("[data-fig-ui]")) return;
+    // Starting a highlight ON an existing highlight opens its comment instead
+    // of layering a new one.
+    const existing = e.target && e.target.closest && e.target.closest("mark[data-fig-highlight]");
+    if (existing) {
+      e.preventDefault();
+      e.stopPropagation();
+      openHighlightDetail(existing);
+      return;
+    }
     clearHlPreview();
     hlDown = { x: e.clientX, y: e.clientY };
     e.stopPropagation();
@@ -418,28 +598,34 @@
     if (!pieces.length && Math.hypot(x2 - hlDown.x, y2 - hlDown.y) < 6) {
       pieces = wordPieceAt(x2, y2);
     }
-    if (!pieces.length) return;
-    const text = pieces.map((p) => p.node.data.slice(p.start, p.end)).join(" ").replace(/\s+/g, " ").trim();
+    // Pieces already inside a highlight belong to that highlight — never
+    // double-wrap. If the whole drag was over one, open its comment.
+    const fresh = pieces.filter((p) => !(p.node.parentElement && p.node.parentElement.closest("mark[data-fig-highlight]")));
+    if (!fresh.length) {
+      const over = pieces.length
+        ? pieces[0].node.parentElement.closest("mark[data-fig-highlight]")
+        : (document.elementFromPoint(x2, y2) || {}).closest?.("mark[data-fig-highlight]");
+      if (over) openHighlightDetail(over);
+      return;
+    }
+    const text = fresh.map((p) => p.node.data.slice(p.start, p.end)).join(" ").replace(/\s+/g, " ").trim();
     if (!text) return;
     const id = nextId++;
     const marks = [];
-    for (const p of pieces) {
+    for (const p of fresh) {
       const m = wrapPiece(p.node, p.start, p.end, id);
       if (m) marks.push(m);
     }
     const sel = window.getSelection();
     if (sel) sel.removeAllRanges();
-    const firstSpan = pieces[0].span;
+    const firstSpan = fresh[0].span;
     const pageEl = firstSpan.closest(".fig-pdf-page");
     const h = {
-      id, text: text.slice(0, 500), note: "", targetPath: cssPath(firstSpan),
+      id, text: text.slice(0, 500), note: "", replies: [], targetPath: cssPath(firstSpan),
       ...(pageEl ? { page: Number(pageEl.dataset.page) } : {}),
     };
-    state.highlights.push(h);
     const anchor = (marks[marks.length - 1] || firstSpan).getBoundingClientRect();
-    openNote(window.scrollX + anchor.left, window.scrollY + anchor.bottom, (note) => {
-      h.note = note;
-    });
+    commitHighlight(h, marks, anchor);
   };
   // ------------------------------------------------------------------------
 
@@ -496,18 +682,39 @@
       : range.commonAncestorContainer;
     const marks = wrapRangeTextNodes(range, id);
     if (sel) sel.removeAllRanges();
+    // Everything in the drag was already highlighted → open that comment.
+    if (!marks.length) {
+      const hit = [...document.querySelectorAll("mark[data-fig-highlight]")].find((mk) => {
+        try { return range.intersectsNode(mk); } catch { return false; }
+      });
+      if (hit) { openHighlightDetail(hit); return; }
+    }
     const pageEl = anchorEl && anchorEl.closest ? anchorEl.closest(".fig-pdf-page") : null;
     const h = {
-      id, text: text.slice(0, 500), note: "", targetPath: cssPath(anchorEl),
+      id, text: text.slice(0, 500), note: "", replies: [], targetPath: cssPath(anchorEl),
       ...(pageEl ? { page: Number(pageEl.dataset.page) } : {}),
     };
-    // Record even when the visual paint fails (split-node markup edge): the
-    // highlight is an input to generation, not decoration.
-    state.highlights.push(h);
-    if (!marks.length) toast("Text flagged (it spans markup, so it won't paint here)");
-    const rect = marks.length ? marks[marks.length - 1].getBoundingClientRect() : selRect;
+    commitHighlight(h, marks, marks.length ? marks[marks.length - 1].getBoundingClientRect() : selRect);
+  };
+
+  // The note is what makes a highlight real (mirrors the /fig skill's Suggest
+  // mode): the marks paint immediately as a preview, the note editor opens,
+  // and cancel/empty REMOVES the highlight — an accidental drag leaves
+  // nothing behind. Saved marks become clickable to reopen the comment.
+  const commitHighlight = (h, marks, rect) => {
     openNote(window.scrollX + rect.left, window.scrollY + rect.bottom, (note) => {
       h.note = note;
+      state.highlights.push(h);
+      marks.forEach((mk) => {
+        mk.addEventListener("click", (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openHighlightDetail(mk);
+        });
+      });
+      if (!marks.length) toast("Text flagged (it spans markup, so it won't paint here)");
+    }, {
+      onCancel: () => { unwrapMarks(h.id); },
     });
   };
 
@@ -646,39 +853,68 @@
     return "<!doctype html>\n" + clone.outerHTML;
   };
 
+  const setBusy = (on) => {
+    state.ui.busy = on;
+    const go = state.ui.goBtn;
+    if (go) {
+      go.disabled = on;
+      go.classList.toggle("fig-go-busy", on);
+    }
+  };
+
   const dispatch = () => {
+    if (state.ui.busy) return; // double-press = duplicate job
     const total = state.comments.length + state.highlights.length + state.strokes.length;
     if (!total) { toast("Nothing annotated yet"); return; }
+    setBusy(true);
     toast("Sending to Fig…", true);
-    const pdf = window.__figPDF || null;
-    const payload = {
-      type: pdf ? "pdf" : "html",
-      url: pdf ? pdf.src : location.href,
-      title: document.title,
-      viewport: { w: window.innerWidth, h: window.innerHeight },
-      capturedAt: new Date().toISOString(),
-      html: pdf ? "" : serializePage(),
-      pdfBase64: pdf ? pdf.b64 : undefined,
-      annotations: {
-        comments: state.comments,
-        highlights: state.highlights,
-        strokes: state.strokes.map((s) => ({
-          box: s.box, color: s.color, nearPath: s.nearPath, nearText: s.nearText,
-          page: s.page, rx: s.rx, ry: s.ry,
-        })),
-      },
-    };
-    chrome.runtime.sendMessage({ type: "fig-dispatch", payload }, (res) => {
-      if (res && res.ok) {
-        toast("Fig is generating — a status tab opened");
-      } else {
-        const detail = res && res.data && res.data.error ? " (" + res.data.error + ")" : "";
-        toast("Fig companion not reachable on 127.0.0.1:41414" + detail, true);
+    // Serializing a big page is sync work; yield a frame first so the toast
+    // and the button's busy state actually paint before it starts.
+    setTimeout(() => {
+      const pdf = window.__figPDF || null;
+      const payload = {
+        type: pdf ? "pdf" : "html",
+        url: pdf ? pdf.src : location.href,
+        title: document.title,
+        viewport: { w: window.innerWidth, h: window.innerHeight },
+        capturedAt: new Date().toISOString(),
+        html: pdf ? "" : serializePage(),
+        pdfBase64: pdf ? pdf.b64 : undefined,
+        annotations: {
+          comments: state.comments,
+          highlights: state.highlights,
+          strokes: state.strokes.map((s) => ({
+            box: s.box, color: s.color, nearPath: s.nearPath, nearText: s.nearText,
+            page: s.page, rx: s.rx, ry: s.ry,
+          })),
+        },
+      };
+      // A dead service worker means the callback never fires; without this
+      // cap the sticky "Sending…" toast and the disabled button are forever.
+      let settled = false;
+      const settle = (fn) => { if (!settled) { settled = true; clearTimeout(cap); setBusy(false); fn(); } };
+      const cap = setTimeout(() => settle(() => toast("Fig didn't answer — reload the extension and try again", true)), 25000);
+      try {
+        chrome.runtime.sendMessage({ type: "fig-dispatch", payload }, (res) => {
+          settle(() => {
+            if (res && res.ok) {
+              toast("Fig is generating — a status tab opened");
+            } else {
+              const detail = (res && ((res.data && res.data.error) || res.error)) ? " (" + ((res.data && res.data.error) || res.error) + ")" : "";
+              toast("Fig companion not reachable on 127.0.0.1:41414" + detail, true);
+            }
+          });
+        });
+      } catch (e) {
+        // Extension was reloaded while this page was open: the old overlay's
+        // runtime handle is dead. Say so instead of failing silently.
+        settle(() => toast("Fig was updated — press ⌥⇧F to reload the tools, then press Fig again", true));
       }
-    });
+    }, 0);
   };
 
   const clearAll = () => {
+    closeDetail();
     if (state.ui.pins) state.ui.pins.clear();
     state.comments = [];
     state.highlights = [];
@@ -756,6 +992,7 @@
     );
     go.addEventListener("click", dispatch);
     state.ui.bar = bar;
+    state.ui.goBtn = go;
     state.ui.drawColors = drawColors;
     state.ui.modeButtons = { draw, comment, highlight };
   };
@@ -799,6 +1036,7 @@
     buildPinLayer();
     initCanvas();
     document.addEventListener("click", onPageClick, true);
+    document.addEventListener("keydown", onKeydown, true);
     document.addEventListener("mousedown", onMouseDown, true);
     document.addEventListener("mousemove", onHlMouseMove, true);
     document.addEventListener("mouseup", onMouseUp, true);
@@ -811,12 +1049,14 @@
     state.mode = null;
     document.body.classList.remove("fig-mode-comment", "fig-mode-highlight", "fig-mode-draw");
     document.removeEventListener("click", onPageClick, true);
+    document.removeEventListener("keydown", onKeydown, true);
     document.removeEventListener("mousedown", onMouseDown, true);
     document.removeEventListener("mousemove", onHlMouseMove, true);
     document.removeEventListener("mouseup", onMouseUp, true);
     clearHlPreview();
     hlDown = null;
     closeNote();
+    closeDetail();
     for (const el of document.querySelectorAll("[data-fig-ui]")) el.remove();
     document.querySelectorAll("mark[data-fig-highlight]").forEach((m) => m.replaceWith(...m.childNodes));
     state.comments = [];
