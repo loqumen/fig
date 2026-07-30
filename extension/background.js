@@ -90,6 +90,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // Settings ops from the overlay's gear popover -> native host (fs access).
+  if (msg && ["fig-settings-get", "fig-settings-set", "fig-link-start"].includes(msg.type)) {
+    (async () => {
+      const map = { "fig-settings-get": "settings-get", "fig-settings-set": "settings-set", "fig-link-start": "link-start" };
+      const out = await new Promise((resolve) => {
+        try {
+          chrome.runtime.sendNativeMessage(FIG_HOST,
+            { type: map[msg.type], settings: msg.settings, provider: msg.provider },
+            (resp) => resolve(chrome.runtime.lastError || !resp ? { ok: false, error: "companion not reachable" } : resp));
+        } catch { resolve({ ok: false, error: "companion not reachable" }); }
+      });
+      sendResponse(out);
+    })();
+    return true;
+  }
+
   // Relay from content script: fetch to the companion goes through the worker
   // so the request originates from the extension, not the page origin.
   if (msg && msg.type === "fig-dispatch") {

@@ -49,6 +49,44 @@ function dispatch(payload) {
   });
 }
 
+
+// ---- settings + BYO link ops (the gear popover's backend) ----
+// The host has direct fs access, so settings never need tokens or pages.
+const SETTINGS_FILE = path.join(os.homedir(), ".fig", "settings.json");
+const PUBLISH_FILE = path.join(os.homedir(), ".fig", "publish.json");
+
+function readJson(p) { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; } }
+
+function settingsGet() {
+  const s = readJson(SETTINGS_FILE) || {};
+  const ps = readJson(PUBLISH_FILE);
+  return { ok: true, data: { target: s.target || "localhost", publish: ps } };
+}
+
+function settingsSet(patch) {
+  const s = readJson(SETTINGS_FILE) || {};
+  if (["localhost", "linked", "vercel"].includes(patch.target)) s.target = patch.target;
+  fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2));
+  return settingsGet();
+}
+
+function linkStart(provider) {
+  const p = provider === "vercel" ? "vercel" : "cloudflare";
+  const script = [
+    path.join(__dirname, "fig-link.js"),
+    path.join(__dirname, "..", "companion", "fig-link.js"),
+  ].find((f) => fs.existsSync(f));
+  if (!script) return { ok: false, data: { error: "fig-link.js not found" } };
+  const { spawn } = require("child_process");
+  const child = spawn(process.execPath, [script, p], {
+    detached: true, stdio: "ignore",
+    env: { ...process.env, PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].join(":") },
+  });
+  child.unref();
+  return { ok: true, data: { started: p } };
+}
+
 // stdin framing
 let buf = Buffer.alloc(0);
 process.stdin.on("data", async (chunk) => {
@@ -59,6 +97,9 @@ process.stdin.on("data", async (chunk) => {
     const msg = JSON.parse(buf.slice(4, 4 + len).toString("utf8"));
     buf = buf.slice(4 + len);
     if (msg && msg.type === "ping") { send({ ok: true, data: { pong: true } }); continue; }
+    if (msg && msg.type === "settings-get") { send(settingsGet()); continue; }
+    if (msg && msg.type === "settings-set") { send(settingsSet(msg.settings || {})); continue; }
+    if (msg && msg.type === "link-start") { send(linkStart(msg.provider)); continue; }
     send(await dispatch(msg && msg.payload ? msg.payload : msg));
   }
 });

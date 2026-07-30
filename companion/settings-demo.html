@@ -1,0 +1,133 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Fig — toolbar settings demo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500&family=Josefin+Sans:wght@500&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family:'DM Sans',system-ui,-apple-system,sans-serif; font-weight:300;
+    background:#fafaf8; color:#1a1a1a; min-height:100vh; line-height:1.7; padding:48px 24px;
+  }
+  .fake-page { max-width:560px; margin:0 auto; color:#4a4a46; }
+  .fake-page h1 { font-size:22px; font-weight:400; color:#1a1a1a; margin-bottom:10px; }
+  .demonote { color:#9a9790; font-size:11px; margin-top:16px; }
+
+  /* ---- the Fig toolbar, exactly as the extension renders it ---- */
+  .fig-toolbar {
+    position:fixed; bottom:24px; right:24px; z-index:100;
+    display:flex; align-items:center; gap:2px;
+    background:#fafaf8; border:1px solid #e8e6e1; border-radius:14px; padding:6px;
+    box-shadow:0 6px 24px rgba(26,26,26,.12);
+  }
+  .fig-btn {
+    width:40px; height:40px; border-radius:9px; border:none; background:transparent;
+    color:#4a4a46; display:flex; align-items:center; justify-content:center; cursor:pointer;
+    transition:background 150ms cubic-bezier(.32,.72,0,1), color 150ms cubic-bezier(.32,.72,0,1);
+  }
+  .fig-btn svg { width:20px; height:20px; fill:none; stroke:currentColor; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .fig-btn:hover { background:#f0eee9; color:#1a1a1a; }
+  .fig-btn.active { background:#1a1a1a; color:#fafaf8; }
+  .fig-divider { width:1px; height:22px; background:#e8e6e1; margin:0 5px; }
+  .fig-go {
+    display:flex; align-items:center; gap:7px; height:40px; border:none; border-radius:9px;
+    padding:2px 16px 0; background:#2C9F28; color:#fafaf8;
+    font-family:'Josefin Sans','DM Sans',sans-serif; font-size:15px; font-weight:500; cursor:pointer;
+  }
+
+  /* ---- the settings popover ---- */
+  .fig-settings {
+    position:fixed; bottom:84px; right:24px; z-index:101;
+    width:300px; background:#fafaf8; border:1px solid #e8e6e1; border-radius:12px;
+    padding:16px; box-shadow:0 10px 32px rgba(26,26,26,.16);
+    font-size:13px; display:none;
+    transform-origin:bottom right;
+  }
+  .fig-settings.open { display:block; animation:pop .22s cubic-bezier(.34,1.3,.64,1) both; }
+  @keyframes pop { from { opacity:0; transform:scale(.94) translateY(6px); } to { opacity:1; transform:scale(1) translateY(0); } }
+  .fig-settings h3 { font-size:13px; font-weight:500; margin:0 0 10px; }
+  .fig-settings .group { margin-bottom:14px; }
+  .fig-settings .group-label { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:#9a9790; margin-bottom:6px; }
+  .fig-settings label { display:flex; gap:8px; align-items:flex-start; padding:5px 0; cursor:pointer; color:#1a1a1a; }
+  .fig-settings label input { margin-top:4px; accent-color:#2C9F28; }
+  .fig-settings .hint { display:block; color:#9a9790; font-size:11.5px; line-height:1.45; }
+  .fig-settings .row { display:flex; align-items:center; justify-content:space-between; margin-top:4px; }
+  .fig-settings .save {
+    background:#2C9F28; color:#fafaf8; border:none; border-radius:9px;
+    padding:7px 16px; font-family:inherit; font-size:13px; cursor:pointer;
+  }
+  .fig-settings .save:hover { background:#26881f; }
+  .fig-settings .saved-note { color:#2C9F28; font-size:12px; opacity:0; transition:opacity .2s; }
+  .fig-settings .saved-note.show { opacity:1; }
+  .conn { display:flex; align-items:center; gap:6px; color:#9a9790; font-size:11.5px; margin-top:10px; padding-top:10px; border-top:1px solid #e8e6e1; }
+  .dot { width:7px; height:7px; border-radius:50%; background:#2C9F28; }
+</style></head>
+<body>
+  <div class="fake-page">
+    <h1>Any page you're annotating</h1>
+    <p>The toolbar sits bottom-right as always. The gear is new — settings live where the work happens, not at a URL nobody knows.</p>
+    <p class="demonote">Demo — click the gear. On the real toolbar, Save writes ~/.fig/settings.json through the companion.</p>
+  </div>
+
+  <div class="fig-settings" id="pop">
+    <h3>Fig settings</h3>
+    <div class="group">
+      <div class="group-label">Where results open</div>
+      <label><input type="radio" name="target" checked>
+        <span>This computer only<span class="hint">Revised pages stay on this machine. Nothing is published.</span></span></label>
+      <label><input type="radio" name="target">
+        <span>Also publish to the web<span class="hint">Each result also deploys to the shared review site at a link anyone can open.</span></span></label>
+    </div>
+    <div class="group">
+      <div class="group-label">Team review</div>
+      <label><input type="checkbox" checked>
+        <span>Review tools on published pages<span class="hint">Teammates can pin comments and highlight on the published page — nothing to install. Everyone can delete only their own feedback.</span></span></label>
+    </div>
+    <div class="row">
+      <span class="saved-note" id="savedNote">Saved</span>
+      <button class="save" id="saveBtn">Save</button>
+    </div>
+    <div class="conn"><span class="dot"></span>Companion connected</div>
+  </div>
+
+  <div class="fig-toolbar">
+    <button class="fig-btn" title="Draw"><svg viewBox="0 0 24 24"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+    <button class="fig-btn" title="Comment"><svg viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></svg></button>
+    <button class="fig-btn" title="Suggest"><svg viewBox="0 0 24 24"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4l8 8Z"/></svg></button>
+    <span class="fig-divider"></span>
+    <button class="fig-btn" title="Clear all markings"><svg viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>
+    <button class="fig-btn" title="Help"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></button>
+    <button class="fig-btn" id="gearBtn" title="Settings"><svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></button>
+    <span class="fig-divider"></span>
+    <button class="fig-go"><span>Fig</span></button>
+  </div>
+
+<script>
+  var pop = document.getElementById("pop");
+  var gear = document.getElementById("gearBtn");
+  gear.addEventListener("click", function (e) {
+    e.stopPropagation();
+    var open = pop.classList.toggle("open");
+    gear.classList.toggle("active", open);
+  });
+  document.addEventListener("click", function (e) {
+    if (!pop.classList.contains("open")) return;
+    if (e.target.closest(".fig-settings") || e.target.closest("#gearBtn")) return;
+    pop.classList.remove("open");
+    gear.classList.remove("active");
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { pop.classList.remove("open"); gear.classList.remove("active"); }
+  });
+  document.getElementById("saveBtn").addEventListener("click", function () {
+    var n = document.getElementById("savedNote");
+    n.classList.add("show");
+    setTimeout(function () {
+      n.classList.remove("show");
+      pop.classList.remove("open");
+      gear.classList.remove("active");
+    }, 900);
+  });
+</script>
+</body></html>

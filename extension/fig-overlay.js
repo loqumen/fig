@@ -12,7 +12,7 @@
   // guard would keep running stale code forever. On a version mismatch,
   // tear the old overlay down (its toggle detaches its own listeners) and
   // let this file rebuild fresh.
-  const FIG_VERSION = 9;
+  const FIG_VERSION = 10;
   if (window.__figToggle && window.__figVersion !== FIG_VERSION) {
     if (document.querySelector(".fig-toolbar")) { try { window.__figToggle(); } catch { /* stale */ } }
     window.__figToggle = null;
@@ -42,6 +42,7 @@
     highlighter: '<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4l8 8Z"/>',
     trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
     help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+    gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
     eraser: '<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>',
   };
 
@@ -104,6 +105,7 @@
     // not stay hovering after the tool is switched.
     closeNote();
     closeDetail();
+    closeSettings();
     state.mode = state.mode === mode ? null : mode;
     document.body.classList.toggle("fig-mode-comment", state.mode === "comment");
     document.body.classList.toggle("fig-mode-highlight", state.mode === "highlight");
@@ -376,8 +378,9 @@
       openHighlightDetail(mk);
       return;
     }
-    // Clicking anywhere else dismisses an open comment popover.
+    // Clicking anywhere else dismisses an open comment popover / settings.
     if (state.ui.detail) closeDetail();
+    if (state.ui.settingsPop) closeSettings();
     // In highlight mode the page must not react to the selection gesture
     // (links navigating, accordions toggling mid-drag).
     if (state.mode === "highlight") { e.preventDefault(); e.stopPropagation(); return; }
@@ -930,6 +933,83 @@
 
   // ---------- toolbar ----------
 
+  // ---------- settings popover (the gear — ALL Fig settings live here) ----------
+  const closeSettings = () => {
+    if (state.ui.settingsPop) { state.ui.settingsPop.remove(); state.ui.settingsPop = null; }
+    if (state.ui.gearBtn) state.ui.gearBtn.classList.remove("fig-active");
+  };
+
+  const sendBg = (msg) => new Promise((resolve) => {
+    try { chrome.runtime.sendMessage(msg, (r) => resolve(r || { ok: false })); }
+    catch { resolve({ ok: false }); }
+  });
+
+  const openSettings = async () => {
+    closeNote(); closeDetail();
+    if (state.ui.settingsPop) { closeSettings(); return; }
+    state.ui.gearBtn.classList.add("fig-active");
+    const pop = document.createElement("div");
+    pop.className = "fig-settings-pop";
+    pop.setAttribute("data-fig-ui", "1");
+    document.body.appendChild(pop);
+    state.ui.settingsPop = pop;
+    let polling = null;
+
+    const render = (data, note) => {
+      if (!state.ui.settingsPop) return;
+      const linked = data && data.publish && data.publish.status === "linked";
+      const linking = data && data.publish && data.publish.status === "linking";
+      const err = data && data.publish && data.publish.status === "error" ? data.publish.error : null;
+      const target = (data && data.target) || "localhost";
+      const canPublish = linked || target === "vercel";
+      pop.innerHTML =
+        '<h3>Fig settings</h3>' +
+        '<div class="fig-set-label">Where results open</div>' +
+        '<label><input type="radio" name="fig-target" value="localhost"' + (target === "localhost" ? " checked" : "") + '><span>This computer only<em>Revised pages stay on this machine. Nothing is published.</em></span></label>' +
+        '<label' + (canPublish ? "" : ' class="fig-dim"') + '><input type="radio" name="fig-target" value="' + (target === "vercel" ? "vercel" : "linked") + '"' + (target !== "localhost" ? " checked" : "") + (canPublish ? "" : " disabled") + '><span>Also publish for team review<em>' +
+        (linked ? 'Linked: ' + (data.publish.url || "").replace("https://", "") + " (" + data.publish.provider + ")"
+          : target === "vercel" ? "Using the legacy review project."
+          : "Link a review site below to enable.") + '</em></span></label>' +
+        (linked || target === "vercel" ? "" :
+          '<div class="fig-set-label">Link a review site</div>' +
+          (linking
+            ? '<div class="fig-set-note">Linking\u2026 ' + ((data.publish && data.publish.step) || "") + '<br><em>A browser sign-in window may open.</em></div>'
+            : '<label><input type="radio" name="fig-provider" value="cloudflare" checked><span>Cloudflare<em>Recommended \u2014 free tier allows commercial use, unlimited page views.</em></span></label>' +
+              '<label><input type="radio" name="fig-provider" value="vercel"><span>Vercel<em>Free Hobby tier is for personal, non-commercial use; work use needs a paid Vercel plan.</em></span></label>' +
+              '<button class="fig-set-link" type="button">Link review site</button>')) +
+        (err ? '<div class="fig-set-err">Link failed: ' + err + '</div>' : "") +
+        '<div class="fig-set-row"><span class="fig-set-saved">' + (note || "") + '</span>' +
+        '<button class="fig-set-save" type="button">Save</button></div>';
+
+      pop.querySelector(".fig-set-save").addEventListener("click", async () => {
+        const t = pop.querySelector('input[name="fig-target"]:checked');
+        const r = await sendBg({ type: "fig-settings-set", settings: { target: t ? t.value : "localhost" } });
+        render(r.data || data, r.ok ? "Saved" : "Could not save");
+        if (r.ok) setTimeout(closeSettings, 800);
+      });
+      const linkBtn = pop.querySelector(".fig-set-link");
+      if (linkBtn) linkBtn.addEventListener("click", async () => {
+        const prov = pop.querySelector('input[name="fig-provider"]:checked');
+        await sendBg({ type: "fig-link-start", provider: prov ? prov.value : "cloudflare" });
+        if (!polling) polling = setInterval(async () => {
+          if (!state.ui.settingsPop) { clearInterval(polling); return; }
+          const r = await sendBg({ type: "fig-settings-get" });
+          if (r.ok) render(r.data);
+          if (r.ok && r.data.publish && r.data.publish.status !== "linking") { clearInterval(polling); polling = null; }
+        }, 2000);
+        const r = await sendBg({ type: "fig-settings-get" });
+        render(r.ok ? r.data : data);
+      });
+    };
+
+    const r = await sendBg({ type: "fig-settings-get" });
+    if (!r.ok) {
+      pop.innerHTML = '<h3>Fig settings</h3><div class="fig-set-note">Fig Companion is not reachable. Open Fig Companion from Applications, then try again.</div>';
+      return;
+    }
+    render(r.data);
+  };
+
   const buildToolbar = () => {
     const bar = document.createElement("div");
     bar.className = "fig-toolbar";
@@ -980,7 +1060,8 @@
     go.innerHTML = "<svg viewBox=\"40 60 320 380\" fill=\"none\" aria-hidden=\"true\"><g transform=\"translate(70,410) rotate(-45)\" fill=\"currentColor\"><path d=\"M 9.0 -31.7 L 323.0 -15.9 Q 330.0 -15.5 330.0 -8.5 L 330.0 8.5 Q 330.0 15.5 323.0 15.9 L 9.0 31.7 Q 0.0 32.0 0.0 23.0 L 0.0 -23.0 Q 0.0 -32.0 9.0 -31.7 Z\"/></g><ellipse cx=\"235\" cy=\"123\" rx=\"36\" ry=\"53\" fill=\"currentColor\" transform=\"rotate(7 235 123)\"/><path d=\"M 288.20 275.25 C 289.92 275.08 291.69 275.13 293.44 275.25 C 295.18 275.38 296.98 275.62 298.67 275.99 C 300.37 276.36 301.98 276.94 303.61 277.47 C 305.23 278.00 306.86 278.55 308.44 279.19 C 310.02 279.83 311.55 280.60 313.10 281.32 C 314.65 282.05 316.22 282.72 317.72 283.54 C 319.23 284.37 320.70 285.29 322.14 286.26 C 323.59 287.24 324.99 288.32 326.39 289.40 C 327.79 290.48 329.17 291.60 330.54 292.75 C 331.91 293.90 333.31 295.08 334.62 296.30 C 335.92 297.52 337.19 298.75 338.38 300.07 C 339.58 301.39 340.70 302.81 341.78 304.21 C 342.87 305.61 343.89 307.03 344.89 308.47 C 345.88 309.90 346.87 311.34 347.76 312.82 C 348.66 314.30 349.49 315.80 350.26 317.33 C 351.02 318.86 351.73 320.42 352.38 322.00 C 353.03 323.58 353.62 325.18 354.15 326.81 C 354.68 328.44 355.20 330.07 355.57 331.76 C 355.95 333.46 356.27 335.22 356.41 336.96 C 356.55 338.70 356.57 340.47 356.41 342.20 C 356.26 343.92 355.93 345.66 355.48 347.31 C 355.03 348.97 354.46 350.58 353.71 352.12 C 352.96 353.66 352.05 355.20 351.00 356.54 C 349.95 357.88 348.73 359.12 347.38 360.16 C 346.04 361.20 344.50 362.11 342.92 362.77 C 341.35 363.43 339.64 363.84 337.94 364.13 C 336.24 364.42 334.48 364.51 332.72 364.50 C 330.96 364.49 329.13 364.34 327.39 364.09 C 325.66 363.83 323.97 363.20 322.31 362.98 C 320.64 362.75 318.88 362.52 317.41 362.74 C 315.94 362.95 314.65 363.41 313.47 364.28 C 312.29 365.16 311.33 366.65 310.33 367.99 C 309.33 369.34 308.50 370.94 307.46 372.35 C 306.41 373.76 305.31 375.21 304.04 376.45 C 302.78 377.68 301.33 378.81 299.87 379.76 C 298.42 380.71 296.92 381.56 295.31 382.14 C 293.71 382.72 291.95 383.07 290.23 383.25 C 288.51 383.44 286.71 383.44 284.99 383.25 C 283.27 383.07 281.52 382.72 279.91 382.14 C 278.29 381.57 276.79 380.75 275.32 379.82 C 273.86 378.89 272.44 377.76 271.13 376.56 C 269.81 375.36 268.57 373.99 267.43 372.63 C 266.29 371.26 265.21 369.85 264.29 368.38 C 263.38 366.91 262.67 365.36 261.94 363.81 C 261.22 362.26 260.55 360.69 259.96 359.09 C 259.37 357.48 258.89 355.83 258.39 354.19 C 257.89 352.55 257.40 350.91 256.98 349.23 C 256.55 347.56 256.17 345.87 255.87 344.15 C 255.56 342.43 255.31 340.68 255.13 338.91 C 254.94 337.14 254.82 335.34 254.76 333.52 C 254.69 331.70 254.69 329.80 254.76 327.97 C 254.82 326.15 254.94 324.35 255.13 322.58 C 255.31 320.81 255.56 319.07 255.87 317.34 C 256.17 315.62 256.58 313.95 256.98 312.26 C 257.37 310.57 257.76 308.89 258.21 307.23 C 258.66 305.57 259.14 303.91 259.69 302.30 C 260.24 300.68 260.84 299.07 261.54 297.52 C 262.24 295.96 263.04 294.44 263.89 292.95 C 264.75 291.45 265.65 289.98 266.67 288.55 C 267.70 287.13 268.83 285.69 270.03 284.42 C 271.24 283.14 272.53 281.96 273.91 280.91 C 275.29 279.87 276.78 278.92 278.31 278.15 C 279.84 277.38 281.44 276.78 283.09 276.30 C 284.73 275.82 286.47 275.43 288.20 275.25 Z\" fill=\"currentColor\" transform=\"translate(-4.95,-4.95)\"/></svg>" + "<span>Fig</span>";
     go.title = "Generate the revised page from these markings";
 
-    bar.append(drawColors, draw, comment, highlight, div1, clear, help, div2, go);
+    const gear = mkIcon("gear", "Settings");
+    bar.append(drawColors, draw, comment, highlight, div1, clear, help, gear, div2, go);
     document.body.appendChild(bar);
 
     draw.addEventListener("click", () => setMode("draw"));
@@ -991,8 +1072,10 @@
       toast("Draw (the eraser rubs out just the parts it touches), drop comment pins (click a pin to open it), or drag across text to flag it. Enter posts a comment; Shift+Enter is a new line. Press Fig and the markings become a revised page. ⌥⇧F toggles the tools.", true)
     );
     go.addEventListener("click", dispatch);
+    gear.addEventListener("click", (e) => { e.stopPropagation(); openSettings(); });
     state.ui.bar = bar;
     state.ui.goBtn = go;
+    state.ui.gearBtn = gear;
     state.ui.drawColors = drawColors;
     state.ui.modeButtons = { draw, comment, highlight };
   };
@@ -1057,6 +1140,7 @@
     hlDown = null;
     closeNote();
     closeDetail();
+    closeSettings();
     for (const el of document.querySelectorAll("[data-fig-ui]")) el.remove();
     document.querySelectorAll("mark[data-fig-highlight]").forEach((m) => m.replaceWith(...m.childNodes));
     state.comments = [];
