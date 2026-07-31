@@ -5,17 +5,12 @@
    pages whose own styles (resets, button rules, svg rules) otherwise win.
    Every element carries data-fig-ui so the serializer strips the chrome.
 
-   DEPTH RECIPE (button-depth study, 2026-07-30, approved from
-   ~/.fig/jobs/button-depth-hq-summon-fig-0730185733/live-mockups.html):
-   every button carries the app-icon treatment — a 148° three-stop gradient
-   (lighter top-left, base mid, darker bottom-right), a thin white inner
-   bevel on the top edge, a dark inner shade on the bottom edge, and a cast
-   shadow tinted with the button's own color. NO outlines anywhere: depth
-   comes from the fills and the shadows. Type is DM Sans 500, sentence case.
-   The three fills, reused verbatim across every Fig surface:
-     chip    #ffffff → #fbfaf8 → #efede8   (quiet, on light)
-     ink     #3a3a37 → #1a1a1a → #050505   (primary dark / active)
-     emerald #48c742 → #2C9F28 → #1c761a   (Fig actions) */
+   Buttons are FLAT: solid fills, no gradients, no bevels (the 2026-07-30
+   button-depth study's gradient treatment was tried and reverted — Brady:
+   "undo the depth entirely for the buttons, just keep the DM sans font").
+   What survived that study: no outlines anywhere (markings 21 and 23), and
+   DM Sans 500 in sentence case on every button, shipped as a vendored woff2
+   ('Fig DM Sans') so button type is identical on every host page. */
 
 .fig-toolbar[data-fig-ui] {
   position: fixed !important;
@@ -30,12 +25,11 @@
   width: auto !important;
   height: auto !important;
   margin: 0 !important;
-  background: linear-gradient(148deg, #ffffff 0%, #fafaf8 55%, #eeece7 100%) !important;
+  background: #fafaf8 !important;
   border: none !important;
   border-radius: 14px !important;
   padding: 7px !important;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), inset 0 -2px 4px rgba(154, 151, 144, 0.2),
-              0 6px 24px rgba(26, 26, 26, 0.14), 0 2px 6px rgba(26, 26, 26, 0.08) !important;
+  box-shadow: 0 6px 24px rgba(26, 26, 26, 0.12) !important;
   font-family: 'DM Sans', -apple-system, system-ui, sans-serif !important;
   line-height: 1 !important;
 }
@@ -73,13 +67,7 @@
 }
 
 .fig-toolbar[data-fig-ui] .fig-btn:hover { background: #f0eee9 !important; color: #1a1a1a !important; }
-/* Active tool = the ink fill, raised off the toolbar. */
-.fig-toolbar[data-fig-ui] .fig-btn.fig-active {
-  background: linear-gradient(148deg, #3a3a37 0%, #1a1a1a 52%, #050505 100%) !important;
-  color: #fafaf8 !important;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.28), inset 0 -2px 3px rgba(0, 0, 0, 0.42),
-              0 2px 5px -1px rgba(20, 20, 20, 0.45) !important;
-}
+.fig-toolbar[data-fig-ui] .fig-btn.fig-active { background: #1a1a1a !important; color: #fafaf8 !important; }
 .fig-toolbar[data-fig-ui] .fig-clear:hover { background: #f3e7e4 !important; color: #8a3b2e !important; }
 
 .fig-toolbar[data-fig-ui] .fig-divider {
@@ -103,7 +91,7 @@
   border-radius: 9px !important;
   margin: 0 !important;
   padding: 2px 16px 0 !important;
-  background: linear-gradient(148deg, #48c742 0%, #2C9F28 52%, #1c761a 100%) !important;
+  background: #2C9F28 !important;
   color: #fafaf8 !important;
   font-family: 'Fig DM Sans', 'DM Sans', -apple-system, system-ui, sans-serif !important;
   font-size: 15px !important;
@@ -112,25 +100,21 @@
   text-transform: none !important;
   line-height: 1 !important;
   cursor: pointer !important;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.45), inset 0 -2px 3px rgba(20, 90, 18, 0.42),
-              0 2px 5px -1px rgba(44, 159, 40, 0.55), 0 5px 10px -4px rgba(44, 159, 40, 0.4) !important;
+  box-shadow: none !important;
   transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1) !important;
 }
 
-.fig-toolbar[data-fig-ui] .fig-go:hover {
-  background: linear-gradient(148deg, #3fb539 0%, #26881f 52%, #176114 100%) !important;
-}
+.fig-toolbar[data-fig-ui] .fig-go:hover { background: #26881f !important; }
 
 .fig-draw-colors[data-fig-ui] {
   display: none !important;
   align-items: center !important;
   gap: 6px !important;
   margin: 0 4px 0 0 !important;
-  background: linear-gradient(148deg, #ffffff 0%, #fafaf8 55%, #eeece7 100%) !important;
+  background: #fafaf8 !important;
   border: none !important;
   border-radius: 10px !important;
   padding: 6px 9px !important;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), inset 0 -2px 3px rgba(154, 151, 144, 0.2) !important;
 }
 
 .fig-draw-colors[data-fig-ui].fig-visible { display: flex !important; }
@@ -140,9 +124,8 @@
   height: 20px !important;
   min-width: 20px !important;
   border-radius: 50% !important;
-  /* No outline in the idle state — the gradient + bevel (set inline from
-     JEWEL_DEPTH) is the whole treatment. The ring below is the ACTIVE
-     indicator, functional encoding rather than chrome, so it stays. */
+  /* No outline in the idle state; the ring below is the ACTIVE indicator,
+     functional encoding rather than chrome, so it stays. */
   border: 2px solid transparent !important;
   cursor: pointer !important;
   margin: 0 !important;
@@ -170,7 +153,7 @@
   height: 28px !important;
   border-radius: 50% !important;
   border: none !important;
-  background: linear-gradient(148deg, #48c742 0%, #2C9F28 52%, #1c761a 100%) !important;
+  background: #2C9F28 !important;
   color: #fafaf8 !important;
   font-size: 12px !important;
   font-weight: 500 !important;
@@ -179,8 +162,7 @@
   align-items: center !important;
   justify-content: center !important;
   cursor: pointer !important;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.45), inset 0 -2px 3px rgba(20, 90, 18, 0.45),
-              0 3px 7px -2px rgba(44, 159, 40, 0.5) !important;
+  box-shadow: 0 2px 8px rgba(26, 26, 26, 0.25) !important;
   transform: translate(-50%, -50%) !important;
   pointer-events: auto !important;
   user-select: none !important;
@@ -230,7 +212,7 @@
 
 .fig-note[data-fig-ui] button {
   border: none !important;
-  background: linear-gradient(148deg, #ffffff 0%, #fbfaf8 55%, #efede8 100%) !important;
+  background: #fafaf8 !important;
   color: #4a4a46 !important;
   border-radius: 6px !important;
   padding: 4px 10px !important;
@@ -243,16 +225,12 @@
   line-height: 1.4 !important;
   width: auto !important;
   height: auto !important;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.9), inset 0 -1px 2px rgba(154, 151, 144, 0.22),
-              0 2px 4px -1px rgba(26, 26, 26, 0.15) !important;
 }
 
 .fig-note[data-fig-ui] button.fig-save {
-  background: linear-gradient(148deg, #3a3a37 0%, #1a1a1a 52%, #050505 100%) !important;
+  background: #1a1a1a !important;
   color: #fafaf8 !important;
   border: none !important;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.28), inset 0 -1px 2px rgba(0, 0, 0, 0.42),
-              0 2px 4px -1px rgba(20, 20, 20, 0.45) !important;
 }
 
 mark[data-fig-highlight] {
@@ -311,12 +289,7 @@ body.fig-mode-highlight, body.fig-mode-highlight * {
 }
 
 .fig-draw-colors[data-fig-ui] .fig-eraser:hover { background: #f0eee9 !important; color: #1a1a1a !important; }
-.fig-draw-colors[data-fig-ui] .fig-eraser.fig-active {
-  background: linear-gradient(148deg, #3a3a37 0%, #1a1a1a 52%, #050505 100%) !important;
-  color: #fafaf8 !important;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.28), inset 0 -1px 2px rgba(0, 0, 0, 0.42),
-              0 2px 4px -1px rgba(20, 20, 20, 0.45) !important;
-}
+.fig-draw-colors[data-fig-ui] .fig-eraser.fig-active { background: #1a1a1a !important; color: #fafaf8 !important; }
 
 .fig-note[data-fig-ui] button.fig-delete {
   color: #8a3b2e !important;
@@ -470,18 +443,14 @@ mark[data-fig-highlight] { cursor: pointer !important; }
 .fig-settings-pop[data-fig-ui] .fig-set-saved { color: #2C9F28 !important; font-size: 12px !important; }
 .fig-settings-pop[data-fig-ui] .fig-set-save,
 .fig-settings-pop[data-fig-ui] .fig-set-link {
-  background: linear-gradient(148deg, #48c742 0%, #2C9F28 52%, #1c761a 100%) !important;
+  background: #2C9F28 !important;
   color: #fafaf8 !important; border: none !important;
   border-radius: 9px !important; padding: 7px 16px !important;
   font-family: 'Fig DM Sans', 'DM Sans', inherit !important; font-size: 13px !important; font-weight: 500 !important;
   text-transform: none !important; cursor: pointer !important;
   width: auto !important; height: auto !important;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.45), inset 0 -2px 3px rgba(20, 90, 18, 0.42),
-              0 2px 5px -1px rgba(44, 159, 40, 0.5) !important;
 }
 .fig-settings-pop[data-fig-ui] .fig-set-link {
-  background: linear-gradient(148deg, #3a3a37 0%, #1a1a1a 52%, #050505 100%) !important;
+  background: #1a1a1a !important;
   margin-top: 8px !important;
-  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.28), inset 0 -2px 3px rgba(0, 0, 0, 0.42),
-              0 2px 5px -1px rgba(20, 20, 20, 0.45) !important;
 }
