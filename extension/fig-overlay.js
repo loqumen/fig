@@ -12,7 +12,7 @@
   // guard would keep running stale code forever. On a version mismatch,
   // tear the old overlay down (its toggle detaches its own listeners) and
   // let this file rebuild fresh.
-  const FIG_VERSION = 10;
+  const FIG_VERSION = 11;
   if (window.__figToggle && window.__figVersion !== FIG_VERSION) {
     if (document.querySelector(".fig-toolbar")) { try { window.__figToggle(); } catch { /* stale */ } }
     window.__figToggle = null;
@@ -21,6 +21,23 @@
   if (window.__figToggle) { window.__figToggle(); return; }
 
   const JEWELS = ["#1a1a1a", "#F76D18", "#2C9F28", "#8C89E7", "#2268FF"];
+
+  // Button-depth study (2026-07-30): every Fig control wears the app-icon
+  // treatment, swatches included — its own hue as a 148° three-stop gradient,
+  // a white bevel on the top edge, a dark shade on the bottom, and a cast
+  // shadow tinted with that same hue. Keyed by the flat jewel it replaces.
+  const JEWEL_DEPTH = {
+    "#1a1a1a": ["linear-gradient(148deg,#3a3a37 0%,#1a1a1a 52%,#050505 100%)",
+      "inset 0 1px 1px rgba(255,255,255,0.28), inset 0 -1px 2px rgba(0,0,0,0.45), 0 1px 3px rgba(20,20,20,0.45)"],
+    "#F76D18": ["linear-gradient(148deg,#ff9b52 0%,#F76D18 52%,#c24f0a 100%)",
+      "inset 0 1px 1px rgba(255,255,255,0.5), inset 0 -1px 2px rgba(150,60,5,0.45), 0 1px 3px rgba(247,109,24,0.4)"],
+    "#2C9F28": ["linear-gradient(148deg,#48c742 0%,#2C9F28 52%,#1c761a 100%)",
+      "inset 0 1px 1px rgba(255,255,255,0.5), inset 0 -1px 2px rgba(20,90,18,0.45), 0 1px 3px rgba(44,159,40,0.4)"],
+    "#8C89E7": ["linear-gradient(148deg,#ada9f5 0%,#8C89E7 52%,#615ec2 100%)",
+      "inset 0 1px 1px rgba(255,255,255,0.5), inset 0 -1px 2px rgba(58,55,140,0.45), 0 1px 3px rgba(140,137,231,0.4)"],
+    "#2268FF": ["linear-gradient(148deg,#5c8fff 0%,#2268FF 52%,#1149c0 100%)",
+      "inset 0 1px 1px rgba(255,255,255,0.5), inset 0 -1px 2px rgba(10,50,140,0.45), 0 1px 3px rgba(34,104,255,0.4)"],
+  };
 
   const state = {
     on: false,
@@ -1021,7 +1038,9 @@
     for (const color of JEWELS) {
       const dot = document.createElement("button");
       dot.className = "fig-color" + (color === state.drawColor ? " fig-active" : "");
-      dot.style.background = color;
+      const depth = JEWEL_DEPTH[color];
+      dot.style.background = depth ? depth[0] : color;
+      if (depth) dot.style.boxShadow = depth[1];
       dot.title = "Draw color";
       dot.addEventListener("click", () => {
         state.drawColor = color;
@@ -1103,9 +1122,19 @@
     const style = document.createElement("style");
     style.setAttribute("data-fig-ui", "1");
     style.setAttribute("data-fig-font", "1");
+    // Fig ships both faces so button type is identical on every page. The
+    // overlay's other text still falls back to the page's system stack;
+    // only the buttons ask for 'Fig DM Sans' (button-depth study, 2026-07-30,
+    // Brady: make every button DM Sans 500).
     style.textContent = `@font-face {
       font-family: 'Fig Josefin';
       src: url('${chrome.runtime.getURL("vendor/josefin-sans-500.woff2")}') format('woff2');
+      font-weight: 500;
+      font-style: normal;
+    }
+    @font-face {
+      font-family: 'Fig DM Sans';
+      src: url('${chrome.runtime.getURL("vendor/dm-sans-500.woff2")}') format('woff2');
       font-weight: 500;
       font-style: normal;
     }`;

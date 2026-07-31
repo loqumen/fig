@@ -44,7 +44,8 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "vendor/josefin-sans-500.woff2"
+        "vendor/josefin-sans-500.woff2",
+        "vendor/dm-sans-500.woff2"
       ],
       "matches": [
         "<all_urls>"

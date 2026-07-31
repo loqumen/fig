@@ -567,10 +567,14 @@ function generatingPage(slug, st) {
   .ready .fruit, .ready .leaf { animation: none; transform: scale(1); }
   .ready .dots { display: none; }
 
+  /* Depth recipe (button-depth study, 2026-07-30): 148° three-stop gradient,
+     white bevel on the top edge, dark shade on the bottom, cast shadow in the
+     button's own hue, no outline. Bevel/shade are scaled up here because this
+     is the largest button in the suite. */
   .view-btn {
     display: none;
     margin: 18px auto 0;
-    background: #2C9F28;
+    background: linear-gradient(148deg, #48c742 0%, #2C9F28 52%, #1c761a 100%);
     color: #fafaf8;
     border: none;
     border-radius: 10px;
@@ -580,10 +584,11 @@ function generatingPage(slug, st) {
     font-weight: 500;
     letter-spacing: 0.01em;
     cursor: pointer;
-    box-shadow: 0 6px 20px rgba(44, 159, 40, 0.35);
+    box-shadow: inset 0 2px 2px rgba(255, 255, 255, 0.45), inset 0 -3px 5px rgba(20, 90, 18, 0.42),
+                0 10px 20px -8px rgba(44, 159, 40, 0.5), 0 4px 8px -4px rgba(44, 159, 40, 0.35);
     transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1);
   }
-  .view-btn:hover { background: #26881f; }
+  .view-btn:hover { background: linear-gradient(148deg, #3fb539 0%, #26881f 52%, #176114 100%); }
   .ready .view-btn {
     display: block;
     animation: btn-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) both;
