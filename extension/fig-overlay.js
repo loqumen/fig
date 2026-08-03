@@ -12,7 +12,7 @@
   // guard would keep running stale code forever. On a version mismatch,
   // tear the old overlay down (its toggle detaches its own listeners) and
   // let this file rebuild fresh.
-  const FIG_VERSION = 12;
+  const FIG_VERSION = 13;
   if (window.__figToggle && window.__figVersion !== FIG_VERSION) {
     if (document.querySelector(".fig-toolbar")) { try { window.__figToggle(); } catch { /* stale */ } }
     window.__figToggle = null;
@@ -865,6 +865,26 @@
     }
   };
 
+  // The DOM snapshot drops <script>, so a page whose look/behavior is
+  // script-driven (canvas animation, dynamic text) arrives dead at the
+  // companion. Fetch the page's TRUE source (same-origin GET of its own
+  // URL) and ride it along; figd uses it as the edit base when it carries
+  // real script. Best-effort: any failure or timeout just sends without it.
+  const withSource = (payload, done) => {
+    let settled = false;
+    const finish = () => { if (!settled) { settled = true; done(payload); } };
+    if (payload.type === "pdf" || !document.querySelector("script")) { finish(); return; }
+    const cap = setTimeout(finish, 4000);
+    fetch(location.href, { credentials: "include" })
+      .then((r) => (r.ok ? r.text() : null))
+      .then((t) => {
+        clearTimeout(cap);
+        if (t && t.length < 8 * 1024 * 1024 && /<script[\s>]/i.test(t)) payload.sourceHtml = t;
+        finish();
+      })
+      .catch(() => { clearTimeout(cap); finish(); });
+  };
+
   const dispatch = () => {
     if (state.ui.busy) return; // double-press = duplicate job
     const total = state.comments.length + state.highlights.length + state.strokes.length;
@@ -892,27 +912,29 @@
           })),
         },
       };
-      // A dead service worker means the callback never fires; without this
-      // cap the sticky "Sending…" toast and the disabled button are forever.
-      let settled = false;
-      const settle = (fn) => { if (!settled) { settled = true; clearTimeout(cap); setBusy(false); fn(); } };
-      const cap = setTimeout(() => settle(() => toast("Fig didn't answer — reload the extension and try again", true)), 25000);
-      try {
-        chrome.runtime.sendMessage({ type: "fig-dispatch", payload }, (res) => {
-          settle(() => {
-            if (res && res.ok) {
-              toast("Fig is generating — a status tab opened");
-            } else {
-              const detail = (res && ((res.data && res.data.error) || res.error)) ? " (" + ((res.data && res.data.error) || res.error) + ")" : "";
-              toast("Fig companion not reachable on 127.0.0.1:41414" + detail, true);
-            }
+      withSource(payload, (p) => {
+        // A dead service worker means the callback never fires; without this
+        // cap the sticky "Sending…" toast and the disabled button are forever.
+        let settled = false;
+        const settle = (fn) => { if (!settled) { settled = true; clearTimeout(cap); setBusy(false); fn(); } };
+        const cap = setTimeout(() => settle(() => toast("Fig didn't answer — reload the extension and try again", true)), 25000);
+        try {
+          chrome.runtime.sendMessage({ type: "fig-dispatch", payload: p }, (res) => {
+            settle(() => {
+              if (res && res.ok) {
+                toast("Fig is generating — a status tab opened");
+              } else {
+                const detail = (res && ((res.data && res.data.error) || res.error)) ? " (" + ((res.data && res.data.error) || res.error) + ")" : "";
+                toast("Fig companion not reachable on 127.0.0.1:41414" + detail, true);
+              }
+            });
           });
-        });
-      } catch (e) {
-        // Extension was reloaded while this page was open: the old overlay's
-        // runtime handle is dead. Say so instead of failing silently.
-        settle(() => toast("Fig was updated — press ⌥⇧F to reload the tools, then press Fig again", true));
-      }
+        } catch (e) {
+          // Extension was reloaded while this page was open: the old overlay's
+          // runtime handle is dead. Say so instead of failing silently.
+          settle(() => toast("Fig was updated — press ⌥⇧F to reload the tools, then press Fig again", true));
+        }
+      });
     }, 0);
   };
 

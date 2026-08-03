@@ -86,6 +86,47 @@ echo "$PAGE" | grep -q "NEW-HEADLINE" && ok "edit applied" || bad "edit missing"
 echo "$PAGE" | grep -q "keep me" && ok "unmarked content preserved" || bad "content lost"
 echo "$PAGE" | grep -q "fig-changelog" && ok "changelog injected" || bad "no changelog"
 
+echo "== T1b scripted page: true source becomes the edit base =="
+python3 - "$T/p1b.json" <<PY
+import json,sys
+snap = '<!doctype html><html><head><base href="http://s.test/viz/"></head><body><h1>OLD-HEADLINE</h1><canvas id="cv" width="640" height="640"></canvas></body></html>'
+src = '<!DOCTYPE html><html><head><title>Viz</title></head><body><h1>OLD-HEADLINE</h1><canvas id="cv"></canvas><script>var ring="dashed"; draw();</script></body></html>'
+json.dump({"type":"html","url":"http://s.test/viz/","title":"Scripted Page","viewport":{"w":800,"h":600},
+"capturedAt":"now","html":snap,"sourceHtml":src,
+"annotations":{"comments":[{"id":1,"n":1,"text":"change headline","x":1,"y":1,"targetPath":"h1","targetText":"OLD-HEADLINE"}],"highlights":[{"text":"OLD-HEADLINE","note":"flagged"}],"strokes":[]}}, open(sys.argv[1],"w"))
+PY
+R=$(post "$T/p1b.json"); CODE=$(echo "$R"|tail -1); BODY=$(echo "$R"|sed '$d')
+check "scripted dispatch 200" "$CODE" "200"
+SLUGB=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin)['job'])")
+JD="$T/home/.fig/jobs/$SLUGB"
+[ -f "$JD/source.html" ] && ok "source.html written" || bad "no source.html"
+grep -q '<script>var ring' "$JD/edited.html" && ok "edit base carries the page's script" || bad "script missing from edit base"
+grep -q '<base href="http://s.test/viz/">' "$JD/edited.html" && ok "base injected into source-based edit base" || bad "no base injected"
+grep -q "TRUE SOURCE" "$JD/prompt.md" && ok "prompt teaches the source-based flow" || bad "prompt lacks source-based branch"
+grep -q "existing scripts stay" "$JD/prompt.md" && ok "prompt keeps existing scripts" || bad "prompt still bans all scripts"
+grep -q "Remove each <mark data-fig-highlight>" "$JD/prompt.md" && bad "wrapper-removal rule wrongly present" || ok "wrapper-removal rule dropped for source base"
+grep -q "sourceHtml" "$JD/annotations.json" && bad "sourceHtml leaked into annotations.json" || ok "annotations.json stays lean"
+sleep 1.2
+PAGE=$(curl -s "http://127.0.0.1:$PORT/pages/$SLUGB/")
+echo "$PAGE" | grep -q "NEW-HEADLINE" && ok "edit applied on source base" || bad "edit missing"
+echo "$PAGE" | grep -q '<script>var ring' && ok "served page still runs its script" || bad "served page lost script"
+
+echo "== T1c JSON-LD-only source keeps the snapshot base =="
+python3 - "$T/p1c.json" <<PY
+import json,sys
+snap = '<!doctype html><html><head><base href="http://s.test/p/"></head><body><h1>OLD-HEADLINE</h1></body></html>'
+src = '<!DOCTYPE html><html><head><script type="application/ld+json">{"@type":"Article"}</script></head><body><h1>OLD-HEADLINE</h1></body></html>'
+json.dump({"type":"html","url":"http://s.test/p/","title":"Static Page","viewport":{"w":800,"h":600},
+"capturedAt":"now","html":snap,"sourceHtml":src,
+"annotations":{"comments":[{"id":1,"n":1,"text":"x","x":1,"y":1,"targetPath":"h1","targetText":"OLD-HEADLINE"}],"highlights":[],"strokes":[]}}, open(sys.argv[1],"w"))
+PY
+R=$(post "$T/p1c.json"); BODY=$(echo "$R"|sed '$d')
+SLUGC=$(echo "$BODY" | python3 -c "import json,sys;print(json.load(sys.stdin)['job'])")
+JD="$T/home/.fig/jobs/$SLUGC"
+[ -f "$JD/source.html" ] && bad "source.html written for data-only script" || ok "data-only script keeps snapshot base"
+grep -q '<base href="http://s.test/p/">' "$JD/edited.html" && ok "snapshot base kept verbatim" || bad "snapshot base altered"
+sleep 1.2   # let this job's fake generation finish before the next test flips the mode
+
 echo "== T2 noop: exit 0 with no change → error, never infinite spin =="
 echo noop > "$T/home/.fig-test-mode"
 sed 's/Test Page/Noop Page/' "$T/p1.json" > "$T/p2.json"

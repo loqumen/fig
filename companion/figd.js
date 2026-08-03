@@ -93,7 +93,29 @@ function injectFavicon(html) {
 
 const fileHash = (p) => crypto.createHash("sha256").update(fs.readFileSync(p)).digest("hex");
 
-function buildPrompt(job, payload) {
+// Scripted pages arrive with two captures (the DOM snapshot has no <script>,
+// so animation/canvas pages are dead in it). When the true source is the edit
+// base, relative assets must still resolve when the result is served from the
+// fig origin — inject a <base> pointing at the captured URL, unless the page
+// brought its own.
+function withBase(html, url) {
+  try {
+    if (!/^https?:\/\//i.test(String(url || "")) || /<base[\s>]/i.test(html)) return html;
+    const tag = `<base href="${String(url).replace(/"/g, "&quot;")}">`;
+    if (/<head[^>]*>/i.test(html)) return html.replace(/<head[^>]*>/i, (m) => m + tag);
+    if (/<html[^>]*>/i.test(html)) return html.replace(/<html[^>]*>/i, (m) => m + "<head>" + tag + "</head>");
+    return tag + html;
+  } catch { return html; }
+}
+
+// A source capture only replaces the snapshot as the edit base when it
+// carries real executable script (JSON-LD/data blocks don't count — for
+// those the snapshot's highlight wrappers are worth more).
+function hasRealScript(html) {
+  return /<script(?![^>]*type\s*=\s*["']application\/(?:ld\+)?json)[\s>]/i.test(String(html || ""));
+}
+
+function buildPrompt(job, payload, srcBased) {
   const a = payload.annotations;
   const isPdf = payload.type === "pdf";
   const lines = [];
@@ -104,6 +126,13 @@ function buildPrompt(job, payload) {
     lines.push("Files in this directory: source.pdf (the captured document), annotations.json (the full markings data).");
     lines.push("");
     lines.push("Read source.pdf first. Markings reference PDF page numbers; `rx`/`ry` are fractions of the page width/height from the top-left corner.");
+  } else if (srcBased) {
+    lines.push("Revise the captured web page according to the reviewer's markings.");
+    lines.push("");
+    lines.push(`Source: ${payload.url}`);
+    lines.push("Files in this directory: edited.html (the page's TRUE SOURCE, scripts included — this is the file you change), snapshot.html (the rendered DOM as the reviewer saw it, scripts stripped, for reference), annotations.json (the full markings data).");
+    lines.push("");
+    lines.push("This page's appearance and behavior come partly from its scripts (canvas drawing, animation, dynamically built text). A marking about something drawn or animated by script is implemented by editing the script code in edited.html. The page's own scripts are part of the page: keep them running, and edit them when a marking requires it.");
   } else {
     lines.push("Revise the captured web page according to the reviewer's markings.");
     lines.push("");
@@ -127,7 +156,9 @@ function buildPrompt(job, payload) {
     lines.push("");
     lines.push(isPdf
       ? "HIGHLIGHTS (flagged text in the document). A note, when present, says what to do; a highlight with no note means the text is wrong or needs rework, use judgment:"
-      : "HIGHLIGHTS (flagged text; in edited.html each is wrapped in <mark data-fig-highlight>). A note, when present, says what to do; a highlight with no note means the text is wrong or needs rework, use judgment:");
+      : srcBased
+        ? "HIGHLIGHTS (flagged text). edited.html is the raw source and carries no wrappers — locate each by its quoted text, which may sit in markup or inside a script string; snapshot.html shows each wrapped in <mark data-fig-highlight> if context helps. A note, when present, says what to do; a highlight with no note means the text is wrong or needs rework, use judgment:"
+        : "HIGHLIGHTS (flagged text; in edited.html each is wrapped in <mark data-fig-highlight>). A note, when present, says what to do; a highlight with no note means the text is wrong or needs rework, use judgment:");
     a.highlights.forEach((h) => {
       lines.push(`- "${h.text.slice(0, 160)}"${h.page ? ` (page ${h.page})` : ""}${h.note ? ` — note: "${h.note}"` : ""}`);
       (h.replies || []).forEach((r) => lines.push(`  - reply: "${String(r).slice(0, 300)}"`));
@@ -149,13 +180,15 @@ function buildPrompt(job, payload) {
     lines.push("- Write the revised document to edited.html in this directory: a complete standalone HTML document that faithfully recreates the PDF's design (fonts, colors, layout, pagination as sections) with the requested changes applied.");
     lines.push("- Use print CSS (@page { size: Letter; margin: 0.5in }) so the result exports back to PDF cleanly.");
   } else {
-    lines.push("- edited.html already IS the page. Read it, then apply the markings with TARGETED Edit operations on edited.html. Do NOT rewrite the whole file and do NOT use Write on it — everything not covered by a marking (styling, layout, the <base> tag) must survive byte-for-byte.");
-    lines.push("- Remove each <mark data-fig-highlight> wrapper as you apply its change (apply the change, drop the marker).");
+    lines.push("- edited.html already IS the page. Read it, then apply the markings with TARGETED Edit operations on edited.html. Do NOT rewrite the whole file and do NOT use Write on it — everything not covered by a marking (styling, layout, scripts, the <base> tag) must survive byte-for-byte.");
+    if (!srcBased) lines.push("- Remove each <mark data-fig-highlight> wrapper as you apply its change (apply the change, drop the marker).");
   }
   lines.push("- If a marking calls for a real asset from the web (a logo, an image, a brand mark), GET THE REAL ONE: WebFetch the named site and read its HTML for the asset (the header/footer logo <img>, srcset, og:image, or CDN url() references), then curl the file into this directory. Prefer SVG over PNG, the variant designed for the page's background (a light page gets the on-light/dark-text version), and the largest resolution served — never a thumbnail. Embed it in edited.html as inline SVG or a data: URI — never as a local file path (the page is served standalone) and never a hand-drawn or typographic look-alike. If the real asset truly cannot be fetched, keep a labeled placeholder and say so in a fig-question comment.");
   lines.push("- If a marking is ambiguous, make the most reasonable change AND add an HTML comment <!-- fig-question: ... --> at the spot explaining the open question.");
   lines.push('- Also write changes.json in this directory: a JSON array with one entry per marking IN THE ORDER GIVEN, each {"marking": "the marking text or [n]", "change": "one sentence: exactly what changed", "where": "short location in the revised document"}. If a marking produced no change, say why in "change".');
-  lines.push("- Do not add scripts.");
+  lines.push(srcBased
+    ? "- Do not add NEW scripts beyond what the markings require; the page's existing scripts stay."
+    : "- Do not add scripts.");
   return lines.join("\n");
 }
 
@@ -249,6 +282,7 @@ function statusFromEvent(ev, ctr) {
         case "Read":
           toolLine = f === "annotations.json" ? "Reading the markings…"
             : f === "snapshot.html" || f === "edited.html" ? "Reading the captured page…"
+            : f === "source.html" ? "Reading the page source…"
             : f === "source.pdf" ? "Reading the PDF…" : `Reading ${f || "a file"}…`;
           break;
         case "Edit":
@@ -773,18 +807,28 @@ async function handle(req, res) {
       }
     } catch { /* history is best-effort, never blocks a dispatch */ }
     let baseHash = null;
+    let srcBased = false;
     if (isPdf) {
       fs.writeFileSync(path.join(jobDir, "source.pdf"), Buffer.from(payload.pdfBase64, "base64"));
     } else {
       fs.writeFileSync(path.join(jobDir, "snapshot.html"), payload.html);
+      // The DOM snapshot has no <script>, so an animated/canvas page is dead
+      // in it and its script-drawn parts are uneditable. When the extension
+      // also captured the page's true source and that source runs real
+      // script, the SOURCE becomes the edit base: behavior survives into the
+      // served result and markings can reach the drawing code. Static pages
+      // keep the snapshot base (its highlight wrappers pinpoint targets).
+      srcBased = typeof payload.sourceHtml === "string" && hasRealScript(payload.sourceHtml);
+      if (srcBased) fs.writeFileSync(path.join(jobDir, "source.html"), withBase(payload.sourceHtml, payload.url));
       // Pre-copy: generation makes targeted edits to this file instead of
       // rewriting the page, so output scales with the changes.
-      fs.writeFileSync(path.join(jobDir, "edited.html"), payload.html);
+      fs.writeFileSync(path.join(jobDir, "edited.html"),
+        srcBased ? fs.readFileSync(path.join(jobDir, "source.html"), "utf8") : payload.html);
       baseHash = fileHash(path.join(jobDir, "edited.html"));
     }
-    const { html, pdfBase64, ...meta } = payload;
+    const { html, pdfBase64, sourceHtml, ...meta } = payload;
     fs.writeFileSync(path.join(jobDir, "annotations.json"), JSON.stringify(meta, null, 2));
-    fs.writeFileSync(path.join(jobDir, "prompt.md"), buildPrompt(slug, payload));
+    fs.writeFileSync(path.join(jobDir, "prompt.md"), buildPrompt(slug, payload, srcBased));
     writeState(jobDir, {
       phase: "generating",
       type: isPdf ? "pdf" : "html",
