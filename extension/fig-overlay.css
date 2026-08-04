@@ -434,6 +434,26 @@ mark[data-fig-highlight] { cursor: pointer !important; }
   display: block !important; font-style: normal !important; color: #9a9790 !important;
   font-size: 11.5px !important; line-height: 1.45 !important;
 }
+.fig-settings-pop[data-fig-ui] .fig-set-picker {
+  display: flex !important; align-items: center !important; justify-content: space-between !important;
+  gap: 10px !important; padding: 4px 0 !important;
+}
+.fig-settings-pop[data-fig-ui] .fig-set-picker span { color: #1a1a1a !important; font-size: 13px !important; }
+.fig-settings-pop[data-fig-ui] .fig-set-picker select {
+  font-family: 'DM Sans', -apple-system, system-ui, sans-serif !important;
+  font-size: 12.5px !important;
+  color: #1a1a1a !important;
+  background: #ffffff !important;
+  border: 1px solid #e8e6e1 !important;
+  border-radius: 7px !important;
+  padding: 4px 8px !important;
+  margin: 0 !important;
+  width: 150px !important;
+  cursor: pointer !important;
+}
+.fig-settings-pop[data-fig-ui] .fig-set-hint {
+  color: #9a9790 !important; font-size: 11.5px !important; line-height: 1.45 !important; padding: 2px 0 4px !important;
+}
 .fig-settings-pop[data-fig-ui] .fig-set-note { color: #4a4a46 !important; font-size: 12.5px !important; padding: 4px 0 !important; }
 .fig-settings-pop[data-fig-ui] .fig-set-note em { color: #9a9790 !important; font-style: normal !important; font-size: 11.5px !important; }
 .fig-settings-pop[data-fig-ui] .fig-set-err { color: #8a3b2e !important; font-size: 12px !important; margin-top: 6px !important; }

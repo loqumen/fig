@@ -35,5 +35,27 @@ console.log("  ✓ host settings-set persists");
 p.stdin.write(frame({ type: "settings-set", settings: { target: "localhost" } }));
 await next();
 console.log("  ✓ host settings toggle back");
+
+p.stdin.write(frame({ type: "settings-set", settings: { model: "sonnet", effort: "high" } }));
+const s3 = await next();
+const disk3 = JSON.parse(fs.readFileSync(join(home, ".fig/settings.json"), "utf8"));
+if (!(s3.ok && s3.data.model === "sonnet" && s3.data.effort === "high" && disk3.model === "sonnet" && disk3.effort === "high")) {
+  console.log("  ✗ model/effort set"); process.exit(1);
+}
+console.log("  ✓ host model/effort set persists");
+
+p.stdin.write(frame({ type: "settings-set", settings: { model: "gpt-5", effort: "ludicrous" } }));
+const s4 = await next();
+if (!(s4.ok && s4.data.model === "sonnet" && s4.data.effort === "high")) {
+  console.log("  ✗ invalid model/effort should be rejected"); process.exit(1);
+}
+console.log("  ✓ host rejects invalid model/effort values");
+
+p.stdin.write(frame({ type: "settings-set", settings: { model: "", effort: "" } }));
+const s5 = await next();
+if (!(s5.ok && s5.data.model === "" && s5.data.effort === "")) {
+  console.log("  ✗ model/effort reset to default"); process.exit(1);
+}
+console.log("  ✓ host model/effort reset to default");
 p.kill();
 process.exit(0);

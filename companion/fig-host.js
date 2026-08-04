@@ -57,15 +57,22 @@ const PUBLISH_FILE = path.join(os.homedir(), ".fig", "publish.json");
 
 function readJson(p) { try { return JSON.parse(fs.readFileSync(p, "utf8")); } catch { return null; } }
 
+// Generation model/effort choices (the gear popover's pickers). "" = the
+// CLI's own default. Validated here so a bad value can never reach spawn.
+const MODELS = ["", "fable", "opus", "sonnet", "haiku"];
+const EFFORTS = ["", "low", "medium", "high", "xhigh", "max"];
+
 function settingsGet() {
   const s = readJson(SETTINGS_FILE) || {};
   const ps = readJson(PUBLISH_FILE);
-  return { ok: true, data: { target: s.target || "localhost", publish: ps } };
+  return { ok: true, data: { target: s.target || "localhost", model: s.model || "", effort: s.effort || "", publish: ps } };
 }
 
 function settingsSet(patch) {
   const s = readJson(SETTINGS_FILE) || {};
   if (["localhost", "linked", "vercel"].includes(patch.target)) s.target = patch.target;
+  if (MODELS.includes(patch.model)) s.model = patch.model;
+  if (EFFORTS.includes(patch.effort)) s.effort = patch.effort;
   fs.mkdirSync(path.dirname(SETTINGS_FILE), { recursive: true });
   fs.writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2));
   return settingsGet();

@@ -11,6 +11,7 @@ cat > "$T/home/.local/bin/claude" <<'FAKE'
 #!/usr/bin/env node
 const fs = require("fs"), path = require("path"), os = require("os");
 const mode = (() => { try { return fs.readFileSync(path.join(os.homedir(), ".fig-test-mode"), "utf8").trim(); } catch { return "edit"; } })();
+fs.writeFileSync("claude-argv.json", JSON.stringify(process.argv.slice(2)));
 setTimeout(() => {
   if (mode === "edit") {
     const p = "edited.html";
@@ -259,10 +260,47 @@ curl -s "http://127.0.0.1:$PORT/pages/$SLUG3/" | grep -q "NEW-HEADLINE" && ok "r
 C=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$PORT/jobs/$SLUG3/retry" --data "token=testtoken123")
 check "retry on a non-failed job → 409" "$C" "409"
 
+echo "== T16 model/effort settings reach the spawned claude =="
+python3 -c "
+import json
+p='$T/home/.fig/settings.json'; d=json.load(open(p))
+d['model']='sonnet'; d['effort']='high'
+json.dump(d,open(p,'w'))"
+echo edit > "$T/home/.fig-test-mode"
+sed 's/Test Page/Model Page/' "$T/p1.json" > "$T/p16.json"
+SLUG16=$(post "$T/p16.json" | sed '$d' | python3 -c "import json,sys;print(json.load(sys.stdin)['job'])")
+sleep 1.2
+AV="$T/home/.fig/jobs/$SLUG16/claude-argv.json"
+python3 - "$AV" <<'PYA'
+import json,sys
+a=json.load(open(sys.argv[1]))
+ok = "--model" in a and a[a.index("--model")+1]=="sonnet" and "--effort" in a and a[a.index("--effort")+1]=="high"
+print(("  ✓" if ok else "  ✗"), "claude spawned with --model sonnet --effort high")
+sys.exit(0 if ok else 1)
+PYA
+[ $? -eq 0 ] && pass=$((pass+1)) || fail=$((fail+1))
+# empty values = no flags (CLI default)
+python3 -c "
+import json
+p='$T/home/.fig/settings.json'; d=json.load(open(p))
+d['model']=''; d['effort']=''
+json.dump(d,open(p,'w'))"
+sed 's/Test Page/Default Model Page/' "$T/p1.json" > "$T/p16b.json"
+SLUG16B=$(post "$T/p16b.json" | sed '$d' | python3 -c "import json,sys;print(json.load(sys.stdin)['job'])")
+sleep 1.2
+python3 - "$T/home/.fig/jobs/$SLUG16B/claude-argv.json" <<'PYB'
+import json,sys
+a=json.load(open(sys.argv[1]))
+ok = "--model" not in a and "--effort" not in a
+print(("  ✓" if ok else "  ✗"), "empty settings add no model/effort flags")
+sys.exit(0 if ok else 1)
+PYB
+[ $? -eq 0 ] && pass=$((pass+1)) || fail=$((fail+1))
+
 echo "== T12 settings page removed (gear popover owns settings) =="
 C=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/settings")
 check "GET /settings → 404" "$C" "404"
-node "$(cd "$(dirname "$0")" && pwd)/host-settings.mjs" "$T/home" && { pass=$((pass+3)); } || { fail=$((fail+1)); echo "  ✗ host settings suite"; }
+node "$(cd "$(dirname "$0")" && pwd)/host-settings.mjs" "$T/home" && { pass=$((pass+7)); } || { fail=$((fail+1)); echo "  ✗ host settings suite"; }
 
 kill $FIGD_PID 2>/dev/null
 echo

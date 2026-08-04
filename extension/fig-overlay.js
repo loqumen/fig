@@ -12,7 +12,7 @@
   // guard would keep running stale code forever. On a version mismatch,
   // tear the old overlay down (its toggle detaches its own listeners) and
   // let this file rebuild fresh.
-  const FIG_VERSION = 14;
+  const FIG_VERSION = 15;
   if (window.__figToggle && window.__figVersion !== FIG_VERSION) {
     if (document.querySelector(".fig-toolbar")) { try { window.__figToggle(); } catch { /* stale */ } }
     window.__figToggle = null;
@@ -1006,6 +1006,16 @@
         (linked ? 'Linked: ' + (data.publish.url || "").replace("https://", "") + " (" + data.publish.provider + ")"
           : target === "vercel" ? "Using the legacy review project."
           : "Link a review site below to enable.") + '</em></span></label>' +
+        '<div class="fig-set-label">Generation</div>' +
+        '<div class="fig-set-picker"><span>Model</span><select name="fig-model">' +
+        [["", "Default"], ["fable", "Fable"], ["opus", "Opus"], ["sonnet", "Sonnet"], ["haiku", "Haiku"]].map(function (o) {
+          return '<option value="' + o[0] + '"' + ((data.model || "") === o[0] ? " selected" : "") + '>' + o[1] + '</option>';
+        }).join("") + '</select></div>' +
+        '<div class="fig-set-picker"><span>Effort</span><select name="fig-effort">' +
+        [["", "Default"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["xhigh", "Extra high"], ["max", "Max"]].map(function (o) {
+          return '<option value="' + o[0] + '"' + ((data.effort || "") === o[0] ? " selected" : "") + '>' + o[1] + '</option>';
+        }).join("") + '</select></div>' +
+        '<div class="fig-set-hint">Stronger models and higher effort give better revisions and take longer. Default follows the claude CLI’s own setting.</div>' +
         (linked || target === "vercel" ? "" :
           '<div class="fig-set-label">Link a review site</div>' +
           (linking
@@ -1019,7 +1029,13 @@
 
       pop.querySelector(".fig-set-save").addEventListener("click", async () => {
         const t = pop.querySelector('input[name="fig-target"]:checked');
-        const r = await sendBg({ type: "fig-settings-set", settings: { target: t ? t.value : "localhost" } });
+        const mSel = pop.querySelector('select[name="fig-model"]');
+        const eSel = pop.querySelector('select[name="fig-effort"]');
+        const r = await sendBg({ type: "fig-settings-set", settings: {
+          target: t ? t.value : "localhost",
+          model: mSel ? mSel.value : "",
+          effort: eSel ? eSel.value : "",
+        } });
         render(r.data || data, r.ok ? "Saved" : "Could not save");
         if (r.ok) setTimeout(closeSettings, 800);
       });

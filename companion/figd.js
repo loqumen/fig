@@ -233,6 +233,11 @@ function runGeneration(jobDir, settings) {
   if (!settings.claudeArgs.includes("--output-format")) {
     args.push("--output-format", "stream-json", "--verbose");
   }
+  // Model/effort come from the gear popover (settings.model / settings.effort;
+  // empty = the CLI's own default). Hand-customized claudeArgs that already
+  // pin a model or effort win over the popover values.
+  if (settings.model && !settings.claudeArgs.includes("--model")) args.push("--model", String(settings.model));
+  if (settings.effort && !settings.claudeArgs.includes("--effort")) args.push("--effort", String(settings.effort));
   const child = spawn(claudeBin(), args, {
     cwd: jobDir,
     stdio: ["ignore", "pipe", log],
