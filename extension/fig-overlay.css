@@ -483,13 +483,13 @@ mark[data-fig-highlight] { cursor: pointer !important; }
 .fig-onboard[data-fig-ui] .fig-onboard-name { font-size: 13px !important; font-weight: 500 !important; color: #1a1a1a !important; }
 .fig-onboard[data-fig-ui] .fig-onboard-desc { font-size: 12.5px !important; font-weight: 300 !important; line-height: 1.5 !important; color: #9a9790 !important; }
 .fig-onboard[data-fig-ui] .fig-onboard-done {
-  width: 100% !important; background: #1a1a1a !important; color: #fafaf8 !important; border: none !important;
+  width: 100% !important; background: #2C9F28 !important; color: #fafaf8 !important; border: none !important;
   border-radius: 10px !important; padding: 10px !important;
   font-family: 'Fig DM Sans', 'DM Sans', -apple-system, system-ui, sans-serif !important;
   font-size: 13px !important; font-weight: 500 !important; letter-spacing: 0.02em !important; cursor: pointer !important;
   height: auto !important; transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1) !important;
 }
-.fig-onboard[data-fig-ui] .fig-onboard-done:hover { background: #000000 !important; }
+.fig-onboard[data-fig-ui] .fig-onboard-done:hover { background: #26881f !important; }
 
 /* Settings popover — ALL Fig settings live behind the toolbar gear. */
 .fig-settings-pop[data-fig-ui] {
