@@ -381,7 +381,10 @@ function publishToLinked(jobDir) {
     const args = ps.provider === "cloudflare"
       ? ["--yes", PIN.cloudflare, "deploy"]
       : ["--yes", PIN.vercel, "deploy", "--prod", "--yes"];
-    execFile("npx", args, { cwd: ps.dir }, (err, stdout) => {
+    // launchd's bare PATH has no user bin dirs — without this, npx is
+    // ENOENT and every publish fails (seen live 2026-08-04).
+    const env = { ...process.env, PATH: [process.env.PATH, path.join(os.homedir(), ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"].join(":") };
+    execFile("npx", args, { cwd: ps.dir, env }, (err, stdout) => {
       const url = ps.url ? `${ps.url.replace(/\/$/, "")}/${slug}/` : "";
       fs.writeFileSync(
         path.join(jobDir, "deploy.txt"),
@@ -405,7 +408,8 @@ function deployToVercel(jobDir, settings) {
     fs.writeFileSync(src, html);
 
     const runVercel = (note) => {
-      execFile("vercel", ["--prod"], { cwd: settings.vercelDir }, (err, stdout) => {
+      const env = { ...process.env, PATH: [process.env.PATH, path.join(os.homedir(), ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"].join(":") };
+      execFile("vercel", ["--prod"], { cwd: settings.vercelDir, env }, (err, stdout) => {
         fs.writeFileSync(
           path.join(jobDir, "deploy.txt"),
           err ? "Deploy failed: " + err.message

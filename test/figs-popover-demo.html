@@ -1,0 +1,44 @@
+<!doctype html>
+<!-- Demo of the "All figs" toolbar popover: this loads the REAL extension
+     overlay (fig-overlay.js + css) with a chrome shim whose fig-jobs answer
+     is a snapshot of the actual /jobs.json, then opens the popover. What
+     appears bottom-right is byte-identical to what the reloaded extension
+     shows on any page. -->
+<html>
+<head><meta charset="utf-8"><title>Fig — All figs popover demo</title>
+<link rel="stylesheet" href="../extension/fig-overlay.css">
+<style>
+  body { font-family: 'DM Sans', -apple-system, system-ui, sans-serif; background: #fafaf8; color: #1a1a1a; max-width: 640px; margin: 80px auto; padding: 0 24px; line-height: 1.7; }
+  .note { color: #4a4a46; font-size: 14px; }
+  .tag { display: inline-block; background: #f0eee9; border-radius: 6px; padding: 1px 8px; font-size: 12px; color: #4a4a46; }
+</style>
+</head>
+<body>
+<h1 style="font-size:20px;font-weight:600">All figs — live demo</h1>
+<p class="note">This page is running the real Fig overlay with Dobby's snapshot of the real fig list. The toolbar bottom-right is the actual extension UI: the new <span class="tag">grid</span> button (between ? and the gear) opens the popover — it is open now. Click a row to open that fig; click the grid button to toggle; the ? shows the new help card. After reloading the extension in brave://extensions, this exact toolbar appears on every page via ⌥⇧F.</p>
+<script>
+  window.__figDemoJobs = [{"slug": "blockstream-jade-plus-rebrand-preview-0804211431", "title": "Blockstream Jade Plus \u2014 Rebrand Preview", "phase": "done", "startedAt": "2026-08-04T21:14:31.062Z", "markings": 12, "rounds": 3, "pdf": false, "url": "/pages/blockstream-jade-plus-rebrand-preview-0804211431/", "deploy": "Publish failed: spawn npx ENOENT"}, {"slug": "blockstream-jade-plus-rebrand-preview-0804205908", "title": "Blockstream Jade Plus \u2014 Rebrand Preview", "phase": "done", "startedAt": "2026-08-04T20:59:08.464Z", "markings": 12, "rounds": 3, "pdf": false, "url": "/pages/blockstream-jade-plus-rebrand-preview-0804205908/", "deploy": "Publish failed: spawn npx ENOENT"}, {"slug": "parity-smoke-test-0804153747", "title": "Parity Smoke Test", "phase": "done", "startedAt": "2026-08-04T15:37:47.126Z", "markings": 1, "rounds": 1, "pdf": false, "url": "/pages/parity-smoke-test-0804153747/", "deploy": null}, {"slug": "blockstream-jade-plus-rebrand-preview-0804150717", "title": "Blockstream Jade Plus \u2014 Rebrand Preview", "phase": "done", "startedAt": "2026-08-04T15:16:26.000Z", "markings": 4, "rounds": 2, "pdf": false, "url": "/pages/blockstream-jade-plus-rebrand-preview-0804150717/", "deploy": null}, {"slug": "blockstream-jade-plus-rebrand-preview-0804142358", "title": "Blockstream Jade Plus \u2014 Rebrand Preview", "phase": "done", "startedAt": "2026-08-04T14:23:58.112Z", "markings": 8, "rounds": 2, "pdf": false, "url": "/pages/blockstream-jade-plus-rebrand-preview-0804142358/", "deploy": null}, {"slug": "blockstream-jade-plus-rebrand-preview-0804134543", "title": "Blockstream Jade Plus \u2014 Rebrand Preview", "phase": "done", "startedAt": "2026-08-04T13:45:43.245Z", "markings": 25, "rounds": 1, "pdf": false, "url": "/pages/blockstream-jade-plus-rebrand-preview-0804134543/", "deploy": null}, {"slug": "how-jade-generates-your-seed-s-entropy-0803183126", "title": "How Jade Generates Your Seed's Entropy", "phase": "done", "startedAt": "2026-08-03T18:31:26.446Z", "markings": 8, "rounds": 1, "pdf": false, "url": "/pages/how-jade-generates-your-seed-s-entropy-0803183126/", "deploy": null}, {"slug": "button-depth-hq-summon-fig-0730185733", "title": "Button Depth \u2014 HQ \u00b7 Summon \u00b7 Fig", "phase": "done", "startedAt": "2026-07-30T18:57:33.169Z", "markings": 32, "rounds": 1, "pdf": false, "url": "/pages/button-depth-hq-summon-fig-0730185733/", "deploy": null}, {"slug": "firm-brochure-loqumen-0730162905", "title": "Firm Brochure \u2014 Loqumen", "phase": "done", "startedAt": "2026-07-30T16:29:05.072Z", "markings": 1, "rounds": 1, "pdf": false, "url": "/pages/firm-brochure-loqumen-0730162905/", "deploy": null}, {"slug": "firm-brochure-loqumen-0730161314", "title": "Firm Brochure \u2014 Loqumen", "phase": "done", "startedAt": "2026-07-30T16:13:14.949Z", "markings": 1, "rounds": 1, "pdf": false, "url": "/pages/firm-brochure-loqumen-0730161314/", "deploy": null}, {"slug": "dobby-review-loading", "title": "Loqumen Firm Brochure", "phase": "done", "startedAt": "2026-07-30T15:55:16.000Z", "markings": 3, "rounds": 1, "pdf": false, "url": "/pages/dobby-review-loading/", "deploy": null}, {"slug": "firm-brochure-loqumen-0730151809", "title": "Firm Brochure \u2014 Loqumen", "phase": "done", "startedAt": "2026-07-30T15:18:09.356Z", "markings": 1, "rounds": 2, "pdf": false, "url": "/pages/firm-brochure-loqumen-0730151809/", "deploy": null}, {"slug": "fig-loqumen-firm-brochure-2026-pdf-0730151009", "title": "Fig \u2014 Loqumen_Firm_Brochure_2026.pdf", "phase": "done", "startedAt": "2026-07-30T15:10:09.271Z", "markings": 11, "rounds": 1, "pdf": true, "url": "/pages/fig-loqumen-firm-brochure-2026-pdf-0730151009/", "deploy": null}];
+  window.chrome = {
+    runtime: {
+      sendMessage: (msg, cb) => {
+        if (!cb) return;
+        if (msg && msg.type === "fig-jobs") { cb({ ok: true, data: window.__figDemoJobs }); return; }
+        if (msg && msg.type === "fig-settings-get") { cb({ ok: true, data: { target: "vercel", model: "", effort: "", legacyVercel: true, publish: null } }); return; }
+        cb({ ok: true });
+      },
+      getURL: (p) => "../extension/" + p,
+      getManifest: () => ({ version: "0.3.4 demo" }),
+    },
+    storage: { local: { set: (o,cb)=>{cb&&cb();}, get: (k,cb)=>cb({}), remove: (k,cb)=>{cb&&cb();} } },
+  };
+</script>
+<script src="../extension/fig-overlay.js"></script>
+<script>
+  // Open the popover so the demo lands showing the thing itself.
+  setTimeout(() => {
+    const btns = [...document.querySelectorAll(".fig-toolbar .fig-btn")];
+    if (btns[5]) btns[5].click(); // draw, comment, highlight, clear, help, FIGS, gear
+  }, 400);
+</script>
+</body>
+</html>
