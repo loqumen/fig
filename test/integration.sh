@@ -297,6 +297,21 @@ sys.exit(0 if ok else 1)
 PYB
 [ $? -eq 0 ] && pass=$((pass+1)) || fail=$((fail+1))
 
+echo "== T17 human-readable inventory: /jobs.json + index titles =="
+JJ=$(curl -s "http://127.0.0.1:$PORT/jobs.json")
+echo "$JJ" | python3 -c "
+import json,sys
+jobs=json.load(sys.stdin)
+byslug={j['slug']:j for j in jobs}
+j=byslug.get('$SLUG')
+ok = j and j['title']=='Test Page' and j['phase']=='done' and j['markings']==1 and j['url']=='/pages/$SLUG/'
+print(('  ✓' if ok else '  ✗'), '/jobs.json carries title/phase/markings/url')
+sys.exit(0 if ok else 1)" && pass=$((pass+1)) || fail=$((fail+1))
+IDX=$(curl -s "http://127.0.0.1:$PORT/")
+echo "$IDX" | grep -q 'class="jt"[^>]*>Test Page<' && ok "index leads with the human title" || bad "index still shows slugs"
+echo "$IDX" | grep -q "1 marking" && ok "index shows marking count" || bad "no marking count"
+echo "$IDX" | grep -q 'title="'$SLUG'"' && ok "slug demoted to hover title" || bad "slug not on hover"
+
 echo "== T12 settings page removed (gear popover owns settings) =="
 C=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/settings")
 check "GET /settings → 404" "$C" "404"

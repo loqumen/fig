@@ -90,6 +90,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // "All figs" popover: human-readable job inventory from the daemon.
+  if (msg && msg.type === "fig-jobs") {
+    (async () => {
+      try {
+        const r = await fetch("http://127.0.0.1:41414/jobs.json");
+        sendResponse({ ok: r.ok, data: await r.json() });
+      } catch {
+        sendResponse({ ok: false, error: "companion not reachable" });
+      }
+    })();
+    return true;
+  }
+
   // Settings ops from the overlay's gear popover -> native host (fs access).
   if (msg && ["fig-settings-get", "fig-settings-set", "fig-link-start"].includes(msg.type)) {
     (async () => {

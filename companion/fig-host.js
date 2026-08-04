@@ -65,7 +65,11 @@ const EFFORTS = ["", "low", "medium", "high", "xhigh", "max"];
 function settingsGet() {
   const s = readJson(SETTINGS_FILE) || {};
   const ps = readJson(PUBLISH_FILE);
-  return { ok: true, data: { target: s.target || "localhost", model: s.model || "", effort: s.effort || "", publish: ps } };
+  // legacyVercel: the pre-BYO edits project is a valid publish destination
+  // when its directory actually exists (or it is already the active target).
+  let legacyVercel = s.target === "vercel";
+  try { legacyVercel = legacyVercel || (s.vercelDir && fs.existsSync(s.vercelDir)); } catch { /* fine */ }
+  return { ok: true, data: { target: s.target || "localhost", model: s.model || "", effort: s.effort || "", legacyVercel: !!legacyVercel, publish: ps } };
 }
 
 function settingsSet(patch) {

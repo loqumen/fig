@@ -15,7 +15,23 @@
   window.__figTestMem = {};
   window.chrome = {
     runtime: {
-      sendMessage: (msg, cb) => { if (cb) cb({ ok: true }); },
+      sendMessage: (msg, cb) => {
+        if (!cb) return;
+        if (msg && msg.type === "fig-jobs") {
+          cb({ ok: true, data: [
+            { slug: "alpha-0801", title: "Alpha Landing Page", phase: "done", startedAt: "2026-08-01T14:00:00Z", markings: 3, rounds: 2, pdf: false, url: "/pages/alpha-0801/" },
+            { slug: "beta-0802", title: "Beta Brochure", phase: "error", startedAt: "2026-08-02T15:00:00Z", markings: 1, rounds: 1, pdf: false, url: "/jobs/beta-0802/" },
+          ]});
+          return;
+        }
+        if (msg && msg.type === "fig-settings-get") {
+          // target=vercel is THE recourse regression: the link-a-new-site
+          // section must still render (2026-08-04, Brady: "no recourse").
+          cb({ ok: true, data: { target: "vercel", model: "", effort: "", legacyVercel: true, publish: null } });
+          return;
+        }
+        cb({ ok: true });
+      },
       getURL: (p) => p,
       getManifest: () => ({ version: "test" }),
     },
@@ -121,6 +137,60 @@
     window.__figToggle(); // on
     await sleep(200);
     ok("restore works from localStorage alone", !!document.querySelector(".fig-pin"));
+
+    // --- pin dragging: move updates the comment, click still opens -------
+    const pinD = document.querySelector(".fig-pin");
+    const p0 = { x: parseFloat(pinD.style.left), y: parseFloat(pinD.style.top) };
+    const pfire = (el2, type, opts) =>
+      el2.dispatchEvent(new PointerEvent(type, Object.assign({ bubbles: true, cancelable: true, button: 0, pointerId: 1 }, opts)));
+    pfire(pinD, "pointerdown", { clientX: 50, clientY: 50 });
+    pfire(pinD, "pointermove", { clientX: 90, clientY: 75 });
+    pfire(pinD, "pointerup", {});
+    fire(pinD, "click", {});
+    const p1 = { x: parseFloat(pinD.style.left), y: parseFloat(pinD.style.top) };
+    ok("pin drag moves it (+40,+25)", Math.round(p1.x - p0.x) === 40 && Math.round(p1.y - p0.y) === 25);
+    ok("drag's tail click does not open the detail", !document.querySelector(".fig-detail"));
+    pinD.click();
+    ok("plain click after a drag still opens the detail", !!document.querySelector(".fig-detail"));
+    key(document.body, "Escape");
+    await sleep(400); // drag persists (debounced)
+    window.__figToggle(); window.__figToggle(); // refresh-equivalent
+    await sleep(200);
+    const pinR = document.querySelector(".fig-pin");
+    ok("dragged position survives restore", !!pinR && Math.round(parseFloat(pinR.style.left) - p0.x) === 40);
+
+    // --- "All figs" popover ----------------------------------------------
+    const bar2 = document.querySelector(".fig-toolbar");
+    const btns2 = [...bar2.querySelectorAll(".fig-btn")]; // draw, comment, highlight, clear, help, figs, gear
+    const helpBtn = btns2[4], figsBtn = btns2[5];
+    figsBtn.click();
+    await sleep(100);
+    const figsPop = document.querySelector(".fig-figs-pop");
+    ok("figs button opens the All figs popover", !!figsPop);
+    const titles = [...document.querySelectorAll(".fig-figs-title")].map((n) => n.textContent);
+    ok("figs rows show human titles, not slugs", titles.includes("Alpha Landing Page") && titles.includes("Beta Brochure"));
+    ok("figs meta shows markings + rounds", /3 markings/.test(figsPop.textContent) && /round 2/.test(figsPop.textContent));
+    ok("failed fig labeled with retry hint", /failed/.test(figsPop.textContent));
+    figsBtn.click();
+    ok("figs button toggles the popover closed", !document.querySelector(".fig-figs-pop"));
+
+    // --- help card (the /fig onboarding card, not a toast) ---------------
+    helpBtn.click();
+    const helpPop = document.querySelector(".fig-onboard");
+    ok("help opens the onboarding card", !!helpPop && /How to leave feedback/.test(helpPop.textContent));
+    ok("help card lists the tools with icons", helpPop.querySelectorAll(".fig-onboard-row").length >= 4 && helpPop.querySelectorAll(".fig-onboard-icon svg").length >= 4);
+    helpPop.querySelector(".fig-onboard-done").click();
+    ok("Got it closes the help card", !document.querySelector(".fig-onboard"));
+
+    // --- settings: switching recourse always available -------------------
+    const gearBtn = btns2[6];
+    gearBtn.click();
+    await sleep(100);
+    const setPop = document.querySelector(".fig-settings-pop");
+    ok("gear opens settings", !!setPop);
+    ok("provider choice offered even when target=vercel (recourse)", !!setPop && setPop.querySelectorAll('input[name="fig-provider"]').length === 2);
+    ok("review-site destination radio present", !!setPop && !!setPop.querySelector('input[name="fig-dest"][value="vercel"]'));
+    gearBtn.click();
 
     // --- trash is the only real delete -----------------------------------
     clearBtn.click();

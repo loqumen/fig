@@ -517,10 +517,42 @@ function injectChangelog(jobDir, html) {
   return /<\/body>/i.test(html) ? html.replace(/<\/body>/i, widget + "\n</body>") : html + widget;
 }
 
-function page(title, body) {
+function page(title, body, extraCss) {
   return `<!doctype html><html><head><meta charset="utf-8">${FAV_TAG}<title>${title}</title>
 <style>body{font-family:system-ui,-apple-system,sans-serif;background:#fafaf8;color:#1a1a1a;max-width:640px;margin:80px auto;padding:0 24px;line-height:1.7}
-a{color:#2C9F28}h1{font-size:20px;font-weight:600}.muted{color:#4a4a46}</style></head><body>${body}</body></html>`;
+a{color:#2C9F28}h1{font-size:20px;font-weight:600}.muted{color:#4a4a46}${extraCss || ""}</style></head><body>${body}</body></html>`;
+}
+
+// Human-readable job inventory: real page titles, dates, status, marking
+// counts, rounds — the data behind BOTH the localhost index and the
+// extension's "All figs" popover (via /jobs.json). Raw slugs are plumbing;
+// nobody should have to read them.
+function jobsList() {
+  return fs.readdirSync(JOBS)
+    .filter((d) => fs.existsSync(path.join(JOBS, d, "annotations.json")))
+    .map((d) => {
+      const dir = path.join(JOBS, d);
+      const st = jobPhase(dir);
+      let title = st.title || "";
+      if (!title) { try { title = JSON.parse(fs.readFileSync(path.join(dir, "annotations.json"), "utf8")).title || ""; } catch { /* legacy */ } }
+      let rounds = 1;
+      try { rounds += JSON.parse(fs.readFileSync(path.join(dir, "history.json"), "utf8")).length; } catch { /* first round */ }
+      let deploy = null;
+      try { deploy = fs.readFileSync(path.join(dir, "deploy.txt"), "utf8").trim(); } catch { /* not published */ }
+      let startedAt = st.startedAt || null;
+      if (!startedAt) { try { startedAt = new Date(fs.statSync(path.join(dir, "annotations.json")).mtimeMs).toISOString(); } catch { /* fine */ } }
+      const total = st.marks
+        ? (st.marks.comments || 0) + (st.marks.highlights || 0) + (st.marks.strokes || 0)
+        : null;
+      return {
+        slug: d, title: title || d, phase: st.phase, startedAt,
+        markings: total, rounds,
+        pdf: fs.existsSync(path.join(dir, "edited.pdf")),
+        url: st.phase === "done" ? `/pages/${d}/` : `/jobs/${d}/`,
+        deploy,
+      };
+    })
+    .sort((a, b) => String(b.startedAt || "").localeCompare(String(a.startedAt || "")));
 }
 
 // The generating page: the approved loading design (companion/loading-demo.html
@@ -923,6 +955,13 @@ async function handle(req, res) {
     return;
   }
 
+  // Human-readable job inventory (the extension's "All figs" popover).
+  if (url.pathname === "/jobs.json") {
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders(req) });
+    res.end(JSON.stringify(jobsList()));
+    return;
+  }
+
   // Job state as JSON (the status page's poll fallback).
   m = url.pathname.match(/^\/jobs\/([a-z0-9-]+)\/state$/);
   if (m) {
@@ -1015,24 +1054,40 @@ ${transient ? '<p class="muted">This looks temporary (a usage limit or a busy AP
     return;
   }
 
-  // Index of jobs.
+  // Index of jobs — human-readable: real titles lead, slugs are demoted to
+  // hover. Same data (jobsList) as the extension's "All figs" popover.
   if (url.pathname === "/") {
-    const rows = fs.readdirSync(JOBS)
-      .filter((d) => fs.existsSync(path.join(JOBS, d, "annotations.json")))
-      .sort().reverse()
-      .map((d) => {
-        const st = jobPhase(path.join(JOBS, d));
-        const done = st.phase === "done";
-        const label = st.phase === "error" ? "(failed)" : done ? "" : "(generating)";
-        let deploy = "";
-        const dp = path.join(JOBS, d, "deploy.txt");
-        if (fs.existsSync(dp)) deploy = ` <span class="muted">· ${esc(fs.readFileSync(dp, "utf8"))}</span>`;
-        const pdf = fs.existsSync(path.join(JOBS, d, "edited.pdf")) ? ` <a class="muted" href="/pages/${d}/edited.pdf">pdf</a>` : "";
-        return `<li><a href="${done ? "/pages/" + d + "/" : "/jobs/" + d + "/"}">${d}</a> <span class="muted">${label}</span>${pdf}${deploy} <a class="muted" href="/pages/${d}/original">original</a></li>`;
-      })
-      .join("\n");
+    const fmtDate = (iso) => {
+      try {
+        return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      } catch { return ""; }
+    };
+    const rows = jobsList().map((j) => {
+      const bits = [];
+      if (j.startedAt) bits.push(esc(fmtDate(j.startedAt)));
+      if (j.markings != null) bits.push(`${j.markings} marking${j.markings === 1 ? "" : "s"}`);
+      if (j.rounds > 1) bits.push(`round ${j.rounds}`);
+      if (j.phase === "generating") bits.push('<span class="gen">generating…</span>');
+      if (j.phase === "error") bits.push('<span class="err">failed — click to retry</span>');
+      bits.push(`<a href="/pages/${j.slug}/original">original</a>`);
+      if (j.pdf) bits.push(`<a href="/pages/${j.slug}/edited.pdf">pdf</a>`);
+      const pub = j.deploy ? `<div class="pub">${esc(j.deploy)}</div>` : "";
+      return `<div class="job"><a class="jt" href="${j.url}" title="${esc(j.slug)}">${esc(j.title)}</a><div class="jm">${bits.join(" · ")}</div>${pub}</div>`;
+    }).join("\n");
     res.writeHead(200, { "Content-Type": "text/html" });
-    res.end(page("Fig", `<h1>Fig</h1><p class="muted">Results open: ${settings.target === "localhost" ? "this computer only" : "here + published for team review"} · settings live in the Fig toolbar (the gear)</p><ul>${rows || "<li class='muted'>No figs yet</li>"}</ul>`));
+    res.end(page("Fig", `<h1>Fig</h1><p class="muted" style="font-size:13px">Results open: ${settings.target === "localhost" ? "this computer only" : "here + published for team review"} · settings live in the Fig toolbar (the gear)</p>
+<div class="jobs">${rows || "<p class='muted'>No figs yet — annotate any page and press Fig.</p>"}</div>`,
+      `.jobs{margin-top:28px}
+.job{padding:13px 0;border-top:1px solid #e8e6e1}
+.job:first-child{border-top:none}
+.jt{font-size:15px;font-weight:500;color:#1a1a1a;text-decoration:none}
+.jt:hover{color:#2C9F28}
+.jm{font-size:12px;color:#9a9790;margin-top:1px}
+.jm a{color:#9a9790;text-decoration:underline;text-underline-offset:2px}
+.jm a:hover{color:#1a1a1a}
+.jm .gen{color:#2C9F28}
+.jm .err{color:#8a3b2e}
+.pub{font-size:12px;color:#4a4a46;margin-top:2px}`));
     return;
   }
 
