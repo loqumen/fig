@@ -17,6 +17,9 @@ setTimeout(() => {
     const s = fs.readFileSync(p, "utf8");
     fs.writeFileSync(p, s.replace("OLD-HEADLINE", "NEW-HEADLINE"));
     fs.writeFileSync("changes.json", JSON.stringify([{ marking: "[1]", change: "Headline updated", where: "h1" }]));
+    // Emit a stream-json result line like the real CLI: figd captures it as
+    // the round's diagnosis (round memory).
+    console.log(JSON.stringify({ type: "result", is_error: false, result: "DIAGNOSIS-TEXT: headline root cause was X." }));
     process.exit(0);
   }
   if (mode === "noop") process.exit(0);        // exits clean, changes nothing
@@ -189,8 +192,23 @@ curl -s -o /dev/null "http://127.0.0.1:$PORT/"
 python3 - "$T/home/.fig/settings.json" <<'PYS'
 import json,sys
 d=json.load(open(sys.argv[1]))
-ok = "WebFetch" in " ".join(d.get("claudeArgs",[]))
-print(("  \u2713" if ok else "  \u2717"), "legacy default migrated on next request")
+ok = "Read,Write,Edit,Glob,Grep,WebFetch,WebSearch,Bash" in d.get("claudeArgs",[])
+print(("  \u2713" if ok else "  \u2717"), "legacy default migrated to the full toolbelt")
+sys.exit(0 if ok else 1)
+PYS
+[ $? -eq 0 ] && pass=$((pass+1)) || fail=$((fail+1))
+# migration: the curl-only default (2026-07-30) also upgrades
+python3 -c "
+import json,sys
+p='$T/home/.fig/settings.json'; d=json.load(open(p))
+d['claudeArgs']=['--permission-mode','acceptEdits','--allowedTools','Read,Write,Edit,WebFetch,WebSearch,Bash(curl:*)']
+json.dump(d,open(p,'w'))"
+curl -s -o /dev/null "http://127.0.0.1:$PORT/"
+python3 - "$T/home/.fig/settings.json" <<'PYS'
+import json,sys
+d=json.load(open(sys.argv[1]))
+ok = "Read,Write,Edit,Glob,Grep,WebFetch,WebSearch,Bash" in d.get("claudeArgs",[])
+print(("  \u2713" if ok else "  \u2717"), "curl-only default migrated to the full toolbelt")
 sys.exit(0 if ok else 1)
 PYS
 [ $? -eq 0 ] && pass=$((pass+1)) || fail=$((fail+1))
@@ -216,6 +234,30 @@ sleep 1.2
 P2=$(curl -s "http://127.0.0.1:$PORT/pages/$SLUG2B/")
 echo "$P2" | grep -q "Changes · 2" && ok "pill counts BOTH rounds (2)" || bad "pill count wrong"
 echo "$P2" | grep -q "Round 1" && echo "$P2" | grep -q "Round 2 · latest" && ok "rounds labeled" || bad "round labels missing"
+
+echo "== T13 verify phase + full toolbelt in the prompt =="
+grep -q "VERIFY BEFORE FINISHING" "$T/home/.fig/jobs/$SLUG/prompt.md" && ok "prompt mandates the render-and-verify phase" || bad "no verify phase in prompt"
+grep -q -- "--headless" "$T/home/.fig/jobs/$SLUG/prompt.md" && ok "prompt carries the exact headless render command" || bad "no render command"
+
+echo "== T14 round memory: diagnosis written, carried into the child prompt =="
+[ -f "$T/home/.fig/jobs/$SLUG/diagnosis.md" ] && grep -q "DIAGNOSIS-TEXT" "$T/home/.fig/jobs/$SLUG/diagnosis.md" && ok "diagnosis.md captured from the result stream" || bad "no diagnosis.md"
+grep -q "WHAT THE PREVIOUS ROUND DID" "$T/home/.fig/jobs/$SLUG2B/prompt.md" && grep -q "DIAGNOSIS-TEXT" "$T/home/.fig/jobs/$SLUG2B/prompt.md" && ok "child prompt inherits the parent diagnosis" || bad "child prompt lacks prior diagnosis"
+
+echo "== T15 retry: failed job re-runs in place =="
+# SLUG3 is in error state from T3. Error page must offer the retry form.
+EP=$(curl -s "http://127.0.0.1:$PORT/jobs/$SLUG3/")
+echo "$EP" | grep -q "Retry this fig" && ok "error page has a Retry button" || bad "no retry button"
+C=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$PORT/jobs/$SLUG3/retry" --data "token=wrongtoken")
+check "retry with bad token → 403" "$C" "403"
+echo edit > "$T/home/.fig-test-mode"
+C=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$PORT/jobs/$SLUG3/retry" --data "token=testtoken123")
+check "retry accepted → 302" "$C" "302"
+sleep 1.2
+ST=$(curl -s "http://127.0.0.1:$PORT/jobs/$SLUG3/state" | python3 -c "import json,sys;print(json.load(sys.stdin)['phase'])")
+check "retried job reaches done" "$ST" "done"
+curl -s "http://127.0.0.1:$PORT/pages/$SLUG3/" | grep -q "NEW-HEADLINE" && ok "retried job produced the edit" || bad "retry edit missing"
+C=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$PORT/jobs/$SLUG3/retry" --data "token=testtoken123")
+check "retry on a non-failed job → 409" "$C" "409"
 
 echo "== T12 settings page removed (gear popover owns settings) =="
 C=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/settings")

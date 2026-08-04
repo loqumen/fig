@@ -32,14 +32,20 @@ const STATE = ".fig-state.json";
 
 fs.mkdirSync(JOBS, { recursive: true });
 
-// Generation tool grant. Read/Write/Edit do the page work; WebFetch/WebSearch
-// + curl-only Bash let a marking like "use the ACTUAL logo from x.com" be
-// satisfied with the real asset (2026-07-30: a logo marking failed honestly
-// because every network tool was denied). curl is the ONLY Bash allowed —
-// trade-off stated in CLAUDE.md: marked-up page content is prompt input, so
-// network tools widen the injection surface; the grant stays this narrow.
-const CLAUDE_ARGS = ["--permission-mode", "acceptEdits", "--allowedTools", "Read,Write,Edit,WebFetch,WebSearch,Bash(curl:*)"];
+// Generation tool grant (2026-08-04: full-capability round). The old
+// curl-only grant made generation structurally weaker than an interactive
+// claude session: it edited HTML blind — no headless render to LOOK at the
+// result, no measuring scripts, no search across the file. Full Bash closes
+// that gap and powers the mandatory verify phase in buildPrompt. Trade-off
+// stated plainly: the marked-up page content is prompt input, so a hostile
+// page could try to steer a shell-capable agent (injection surface widens
+// from "network fetch" to "local shell"). Accepted for a tool whose whole
+// job is editing pages the USER chose to annotate; anyone wanting the old
+// narrow grant can hand-edit claudeArgs in ~/.fig/settings.json (customized
+// values are never migrated).
+const CLAUDE_ARGS = ["--permission-mode", "acceptEdits", "--allowedTools", "Read,Write,Edit,Glob,Grep,WebFetch,WebSearch,Bash"];
 const CLAUDE_ARGS_LEGACY = ["--permission-mode", "acceptEdits", "--allowedTools", "Read,Write,Edit"];
+const CLAUDE_ARGS_CURL = ["--permission-mode", "acceptEdits", "--allowedTools", "Read,Write,Edit,WebFetch,WebSearch,Bash(curl:*)"];
 
 function loadSettings() {
   let s = {};
@@ -49,8 +55,8 @@ function loadSettings() {
   if (!s.target) { s.target = "localhost"; dirty = true; } // "localhost" | "vercel"
   if (!s.vercelDir) { s.vercelDir = path.join(os.homedir(), "Desktop", "edits"); dirty = true; }
   if (!s.claudeArgs) { s.claudeArgs = CLAUDE_ARGS; dirty = true; }
-  // Migrate a stored copy of the old default; hand-customized args are kept.
-  else if (JSON.stringify(s.claudeArgs) === JSON.stringify(CLAUDE_ARGS_LEGACY)) { s.claudeArgs = CLAUDE_ARGS; dirty = true; }
+  // Migrate stored copies of the old defaults; hand-customized args are kept.
+  else if ([CLAUDE_ARGS_LEGACY, CLAUDE_ARGS_CURL].some((o) => JSON.stringify(s.claudeArgs) === JSON.stringify(o))) { s.claudeArgs = CLAUDE_ARGS; dirty = true; }
   if (dirty) fs.writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2));
   return s;
 }
@@ -115,7 +121,7 @@ function hasRealScript(html) {
   return /<script(?![^>]*type\s*=\s*["']application\/(?:ld\+)?json)[\s>]/i.test(String(html || ""));
 }
 
-function buildPrompt(job, payload, srcBased) {
+function buildPrompt(job, payload, srcBased, prior) {
   const a = payload.annotations;
   const isPdf = payload.type === "pdf";
   const lines = [];
@@ -138,6 +144,13 @@ function buildPrompt(job, payload, srcBased) {
     lines.push("");
     lines.push(`Source: ${payload.url}`);
     lines.push("Files in this directory: edited.html (an exact copy of the captured page — this is the file you change), snapshot.html (the untouched capture, for reference), annotations.json (the full markings data).");
+  }
+  if (prior) {
+    lines.push("");
+    lines.push("WHAT THE PREVIOUS ROUND DID AND LEARNED (this page is a revision of a page Fig already revised; the prior run's closing diagnosis follows — build on it, do not undo its fixes, and reuse its root-cause findings instead of rediscovering them):");
+    lines.push("---");
+    lines.push(String(prior).slice(0, 6000));
+    lines.push("---");
   }
   lines.push("");
   lines.push("The markings and what each means:");
@@ -185,6 +198,9 @@ function buildPrompt(job, payload, srcBased) {
   }
   lines.push("- If a marking calls for a real asset from the web (a logo, an image, a brand mark), GET THE REAL ONE: WebFetch the named site and read its HTML for the asset (the header/footer logo <img>, srcset, og:image, or CDN url() references), then curl the file into this directory. Prefer SVG over PNG, the variant designed for the page's background (a light page gets the on-light/dark-text version), and the largest resolution served — never a thumbnail. Embed it in edited.html as inline SVG or a data: URI — never as a local file path (the page is served standalone) and never a hand-drawn or typographic look-alike. If the real asset truly cannot be fetched, keep a labeled placeholder and say so in a fig-question comment.");
   lines.push("- If a marking is ambiguous, make the most reasonable change AND add an HTML comment <!-- fig-question: ... --> at the spot explaining the open question.");
+  lines.push("- VERIFY BEFORE FINISHING — do not trust that an edit landed; look at the result. Render the revised page headlessly and read the pixels:");
+  lines.push('  "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser" --headless --disable-gpu --screenshot=verify.png --window-size=1440,2600 --virtual-time-budget=8000 "file://$(pwd)/edited.html"');
+  lines.push("  Then Read verify.png and check EVERY marking visibly landed and nothing else broke (layout intact, scripts still drawing, no blank regions). For a marking below the first screenful, add --hide-scrollbars and screenshot again at a taller --window-size, or scroll via a temporary CSS margin — whatever it takes to SEE the marked spot. For visual comparisons or exact measurements, write a short python script (PIL is available). If a marking did not land, fix it and re-render until it does. If no headless browser exists on this machine, verify by careful reading of the edited source and say so in changes.json.");
   lines.push('- Also write changes.json in this directory: a JSON array with one entry per marking IN THE ORDER GIVEN, each {"marking": "the marking text or [n]", "change": "one sentence: exactly what changed", "where": "short location in the revised document"}. If a marking produced no change, say why in "change".');
   lines.push(srcBased
     ? "- Do not add NEW scripts beyond what the markings require; the page's existing scripts stay."
@@ -225,12 +241,15 @@ function runGeneration(jobDir, settings) {
 
   // Translate the event stream to short plain-English status lines, written
   // into job state — the SSE channel pushes each one to the status page.
-  const ctr = { edits: 0 };
+  const ctr = { edits: 0, resultText: "" };
   const rl = require("readline").createInterface({ input: child.stdout });
   rl.on("line", (line) => {
     try { fs.writeSync(log, line + "\n"); } catch { /* log closed */ }
     let ev;
     try { ev = JSON.parse(line); } catch { return; }
+    // The run's closing summary is its diagnosis — kept so the NEXT round
+    // inherits the reasoning, not just one-line change entries.
+    if (ev.type === "result" && typeof ev.result === "string" && !ev.is_error) ctr.resultText = ev.result;
     const status = statusFromEvent(ev, ctr);
     if (status) {
       const cur = readState(jobDir);
@@ -257,6 +276,11 @@ function runGeneration(jobDir, settings) {
       return;
     }
     writeState(jobDir, { phase: "done", finishedAt: new Date().toISOString() });
+    // Round memory: the next fig on this result reads diagnosis.md into its
+    // prompt, so root causes travel forward instead of being re-derived.
+    if (ctr.resultText) {
+      try { fs.writeFileSync(path.join(jobDir, "diagnosis.md"), ctr.resultText); } catch { /* best-effort */ }
+    }
     if (fs.existsSync(path.join(jobDir, "source.pdf"))) printPdf(jobDir);
     const settingsNow = loadSettings();
     if (settingsNow.target === "vercel") deployToVercel(jobDir, settingsNow); // legacy edits-project mode
@@ -298,7 +322,10 @@ function statusFromEvent(ev, ctr) {
           catch { toolLine = "Looking something up…"; }
           break;
         case "WebSearch": toolLine = "Searching the web…"; break;
-        case "Bash": toolLine = /\bcurl\b/.test(inp.command || "") ? "Downloading an asset…" : "Running a command…"; break;
+        case "Bash":
+          toolLine = /--headless|--screenshot|--print-to-pdf/.test(inp.command || "") ? "Rendering the page to check the result…"
+            : /\bcurl\b/.test(inp.command || "") ? "Downloading an asset…" : "Running a command…";
+          break;
       }
     }
   }
@@ -792,7 +819,9 @@ async function handle(req, res) {
     const jobDir = path.join(JOBS, slug);
     fs.mkdirSync(jobDir, { recursive: true });
     // Fig on a Fig result: the change log tracks EVERY round, page to page.
-    // The parent's accumulated history + its own changes ride forward.
+    // The parent's accumulated history + its own changes ride forward, and
+    // its closing diagnosis feeds the new round's prompt (round memory).
+    let priorDiagnosis = null;
     try {
       const seg = String(payload.url || "").match(/\/([a-z0-9-]+)\/?(?:[?#].*)?$/);
       const parent = seg && seg[1] !== slug ? path.join(JOBS, seg[1]) : null;
@@ -804,6 +833,7 @@ async function handle(req, res) {
           if (Array.isArray(pc) && pc.length) hist.push({ job: seg[1], changes: pc });
         } catch { /* parent had no changelog */ }
         if (hist.length) fs.writeFileSync(path.join(jobDir, "history.json"), JSON.stringify(hist, null, 2));
+        try { priorDiagnosis = fs.readFileSync(path.join(parent, "diagnosis.md"), "utf8"); } catch { /* parent predates round memory */ }
       }
     } catch { /* history is best-effort, never blocks a dispatch */ }
     let baseHash = null;
@@ -828,7 +858,7 @@ async function handle(req, res) {
     }
     const { html, pdfBase64, sourceHtml, ...meta } = payload;
     fs.writeFileSync(path.join(jobDir, "annotations.json"), JSON.stringify(meta, null, 2));
-    fs.writeFileSync(path.join(jobDir, "prompt.md"), buildPrompt(slug, payload, srcBased));
+    fs.writeFileSync(path.join(jobDir, "prompt.md"), buildPrompt(slug, payload, srcBased, priorDiagnosis));
     writeState(jobDir, {
       phase: "generating",
       type: isPdf ? "pdf" : "html",
@@ -863,8 +893,33 @@ async function handle(req, res) {
     return;
   }
 
+  // Retry a failed job in place (button on the error page, token-gated).
+  let m = url.pathname.match(/^\/jobs\/([a-z0-9-]+)\/retry$/);
+  if (m && req.method === "POST") {
+    const jobDir = path.join(JOBS, m[1]);
+    if (!fs.existsSync(jobDir)) { res.writeHead(404); res.end("no such job"); return; }
+    const body = await readBody(req, 4096);
+    const token = new URLSearchParams(body).get("token");
+    if (token !== settings.token) { res.writeHead(403); res.end("bad token"); return; }
+    const st = jobPhase(jobDir);
+    if (st.phase !== "error") { res.writeHead(409); res.end("job is not in a failed state"); return; }
+    if (!fs.existsSync(path.join(jobDir, "prompt.md"))) { res.writeHead(409); res.end("job has no prompt to re-run"); return; }
+    try { fs.unlinkSync(path.join(jobDir, "error.txt")); } catch { /* legacy jobs only */ }
+    writeState(jobDir, {
+      phase: "generating",
+      status: "Retrying…",
+      error: undefined,
+      startedAt: new Date().toISOString(),
+      finishedAt: undefined,
+    });
+    runGeneration(jobDir, settings);
+    res.writeHead(302, { Location: `/jobs/${m[1]}/` });
+    res.end();
+    return;
+  }
+
   // Job state as JSON (the status page's poll fallback).
-  let m = url.pathname.match(/^\/jobs\/([a-z0-9-]+)\/state$/);
+  m = url.pathname.match(/^\/jobs\/([a-z0-9-]+)\/state$/);
   if (m) {
     const jobDir = path.join(JOBS, m[1]);
     if (!fs.existsSync(jobDir)) { res.writeHead(404); res.end("no such job"); return; }
@@ -908,8 +963,20 @@ async function handle(req, res) {
       return;
     }
     if (st.phase === "error") {
+      // Retry re-runs the SAME job in place: prompt, annotations, and the
+      // pre-copied edit base are all still in the job dir. Born 2026-08-04:
+      // a rate-limited claude CLI failed a job and recovery required manual
+      // state surgery. CSRF-gated by the hidden token (foreign origins can
+      // blind-POST loopback but cannot read this page to learn it).
+      const transient = /session limit|rate limit|429|overloaded|api error/i.test(st.error || "");
       res.writeHead(200, { "Content-Type": "text/html" });
-      res.end(page("Fig — failed", `<h1>Generation failed</h1><p class="muted">${esc(st.error || "unknown error")}</p><p class="muted"><a href="/">All figs</a></p>`));
+      res.end(page("Fig — failed", `<h1>Generation failed</h1><p class="muted">${esc(st.error || "unknown error")}</p>
+${transient ? '<p class="muted">This looks temporary (a usage limit or a busy API) — retrying later usually works.</p>' : ""}
+<form method="POST" action="/jobs/${m[1]}/retry" style="margin:18px 0;">
+  <input type="hidden" name="token" value="${esc(settings.token)}">
+  <button type="submit" style="background:#2C9F28;color:#fafaf8;border:none;border-radius:9px;padding:10px 22px;font-family:inherit;font-size:14px;font-weight:500;cursor:pointer;">Retry this fig</button>
+</form>
+<p class="muted"><a href="/">All figs</a></p>`));
       return;
     }
     res.writeHead(200, { "Content-Type": "text/html" });
