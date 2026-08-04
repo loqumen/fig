@@ -1,0 +1,139 @@
+<!doctype html>
+<!-- Headless UI test for the fig overlay: comment pins, replies, highlight
+     detail click (the flash bug), and refresh persistence. Run via
+     test/overlay-ui.sh — it dumps the DOM after a virtual-time budget and
+     greps the PASS/FAIL lines written into #results. -->
+<html>
+<head><meta charset="utf-8"><title>fig overlay test</title></head>
+<body>
+<h1 id="h">Alpha beta gamma delta epsilon zeta</h1>
+<p id="p1">The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.</p>
+<pre id="results">RUNNING</pre>
+<script>
+  // Minimal chrome shim: enough of runtime + storage.local for the overlay.
+  // storage deep-copies on set so it behaves like the real serializing API.
+  window.__figTestMem = {};
+  window.chrome = {
+    runtime: {
+      sendMessage: (msg, cb) => { if (cb) cb({ ok: true }); },
+      getURL: (p) => p,
+      getManifest: () => ({ version: "test" }),
+    },
+    storage: {
+      local: {
+        set: (obj, cb) => { Object.assign(window.__figTestMem, JSON.parse(JSON.stringify(obj))); if (cb) cb(); },
+        get: (k, cb) => cb({ [k]: window.__figTestMem[k] }),
+        remove: (k, cb) => { delete window.__figTestMem[k]; if (cb) cb(); },
+      },
+    },
+  };
+</script>
+<script src="../extension/fig-overlay.js"></script>
+<script>
+(async () => {
+  const out = [];
+  const ok = (name, cond) => out.push((cond ? "PASS" : "FAIL") + " :: " + name);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const fire = (el, type, opts) =>
+    el.dispatchEvent(new MouseEvent(type, Object.assign({ bubbles: true, cancelable: true, view: window }, opts)));
+  const key = (el, k) =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+
+  try {
+    const bar = document.querySelector(".fig-toolbar");
+    ok("toolbar built", !!bar);
+    const btns = [...bar.querySelectorAll(".fig-btn")]; // draw, comment, highlight, clear, help, gear
+    const commentBtn = btns[1], highlightBtn = btns[2];
+    const clearBtn = bar.querySelector(".fig-clear");
+    const p = document.getElementById("p1");
+
+    // --- comment pin + reply -------------------------------------------
+    commentBtn.click();
+    fire(p, "click", { clientX: 40, clientY: Math.round(p.getBoundingClientRect().top + 5) });
+    const note = document.querySelector(".fig-note textarea");
+    ok("comment note editor opens", !!note);
+    note.value = "make this better";
+    key(note, "Enter");
+    const pin = document.querySelector(".fig-pin");
+    ok("pin created and numbered", !!pin && pin.textContent === "1");
+    pin.click();
+    let detail = document.querySelector(".fig-detail");
+    ok("pin click opens detail", !!detail);
+    let rbox = detail.querySelector(".fig-detail-replybox");
+    rbox.value = "reply one";
+    key(rbox, "Enter");
+    detail = document.querySelector(".fig-detail");
+    const rep = detail && detail.querySelector(".fig-detail-reply-text");
+    ok("reply posts and appears", !!rep && rep.textContent === "reply one");
+    key(document.body, "Escape");
+    ok("Escape closes detail", !document.querySelector(".fig-detail"));
+
+    // --- highlight + note ------------------------------------------------
+    highlightBtn.click();
+    const tn = p.firstChild;
+    const sel = window.getSelection();
+    const r = document.createRange();
+    r.setStart(tn, 4); r.setEnd(tn, 19); // "quick brown fox"
+    sel.removeAllRanges(); sel.addRange(r);
+    fire(p, "mousedown", { clientX: 10, clientY: 10 });
+    fire(p, "mouseup", { clientX: 60, clientY: 10 });
+    const note2 = document.querySelector(".fig-note textarea");
+    ok("highlight note editor opens", !!note2);
+    note2.value = "flag this";
+    key(note2, "Enter");
+    const mark = document.querySelector("mark[data-fig-highlight]");
+    ok("mark painted over selection", !!mark && /quick brown fox/.test(mark.textContent));
+
+    // --- THE FLASH BUG: click a mark while highlight mode is active ------
+    fire(mark, "mousedown", {});
+    ok("mark mousedown opens detail (highlight mode)", !!document.querySelector(".fig-detail"));
+    fire(mark, "mouseup", {});
+    fire(mark, "click", {});
+    detail = document.querySelector(".fig-detail");
+    ok("detail SURVIVES the click (flash bug fixed)", !!detail);
+    rbox = detail && detail.querySelector(".fig-detail-replybox");
+    if (rbox) { rbox.value = "hl reply"; key(rbox, "Enter"); }
+    ok("reply on highlight detail appears",
+      [...document.querySelectorAll(".fig-detail-reply-text")].some((n) => n.textContent === "hl reply"));
+    key(document.body, "Escape");
+
+    // --- persistence: toggle off/on restores everything ------------------
+    await sleep(400); // let the debounced persist land
+    window.__figToggle(); // off
+    ok("teardown removes pins", !document.querySelector(".fig-pin"));
+    ok("teardown removes marks", !document.querySelector("mark[data-fig-highlight]"));
+    window.__figToggle(); // on -> restore
+    await sleep(200);
+    const pin2 = document.querySelector(".fig-pin");
+    ok("pin restored after toggle", !!pin2 && pin2.textContent === "1");
+    const mark2 = document.querySelector("mark[data-fig-highlight]");
+    ok("mark restored via quote re-anchor", !!mark2 && /quick brown fox/.test(mark2.textContent));
+    if (mark2) fire(mark2, "click", {});
+    detail = document.querySelector(".fig-detail");
+    ok("restored highlight opens detail", !!detail);
+    ok("restored reply intact", !!detail &&
+      [...detail.querySelectorAll(".fig-detail-reply-text")].some((n) => n.textContent === "hl reply"));
+    key(document.body, "Escape");
+
+    // --- localStorage fallback: chrome.storage lost, page storage survives
+    window.__figToggle(); // off (flushes)
+    for (const k2 of Object.keys(window.__figTestMem)) delete window.__figTestMem[k2];
+    window.__figToggle(); // on
+    await sleep(200);
+    ok("restore works from localStorage alone", !!document.querySelector(".fig-pin"));
+
+    // --- trash is the only real delete -----------------------------------
+    clearBtn.click();
+    await sleep(50);
+    window.__figToggle(); // off
+    window.__figToggle(); // on
+    await sleep(200);
+    ok("cleared state stays cleared after toggle", !document.querySelector(".fig-pin") && !document.querySelector("mark[data-fig-highlight]"));
+  } catch (e) {
+    out.push("FAIL :: uncaught: " + (e && e.stack || e));
+  }
+  document.getElementById("results").textContent = out.join("\n");
+})();
+</script>
+</body>
+</html>

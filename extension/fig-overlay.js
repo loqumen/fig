@@ -12,7 +12,7 @@
   // guard would keep running stale code forever. On a version mismatch,
   // tear the old overlay down (its toggle detaches its own listeners) and
   // let this file rebuild fresh.
-  const FIG_VERSION = 13;
+  const FIG_VERSION = 14;
   if (window.__figToggle && window.__figVersion !== FIG_VERSION) {
     if (document.querySelector(".fig-toolbar")) { try { window.__figToggle(); } catch { /* stale */ } }
     window.__figToggle = null;
@@ -237,7 +237,7 @@
           row.appendChild(el("span", "fig-detail-reply-text", rep));
           const x = el("button", "fig-detail-reply-x", "×");
           x.title = "Delete reply";
-          x.addEventListener("click", () => { item.replies.splice(i, 1); render(); });
+          x.addEventListener("click", () => { item.replies.splice(i, 1); persist(); render(); });
           row.appendChild(x);
           list.appendChild(row);
         });
@@ -249,10 +249,14 @@
       reply.rows = 1;
       reply.placeholder = "Reply…";
       reply.addEventListener("keydown", (e) => {
+        // Host pages listen for keys too (SPAs, editors): keep the reply's
+        // Enter out of their hands, or the page acts on it and the reply is
+        // never posted.
+        e.stopPropagation();
         if (e.key === "Enter" && !e.shiftKey) {
           e.preventDefault();
           const v = reply.value.trim();
-          if (v) { item.replies.push(v); render(); }
+          if (v) { item.replies.push(v); persist(); render(); }
         }
         if (e.key === "Escape") closeDetail();
       });
@@ -273,7 +277,7 @@
         ta.setSelectionRange(ta.value.length, ta.value.length);
         const done = (commit) => {
           const v = ta.value.trim();
-          if (commit && v) opts.setBody(v);
+          if (commit && v) { opts.setBody(v); persist(); }
           render();
         };
         const eActions = el("div", "fig-note-actions");
@@ -324,6 +328,7 @@
   const removeHighlight = (id) => {
     state.highlights = state.highlights.filter((h) => h.id !== id);
     unwrapMarks(id);
+    persist();
     toast("Highlight removed");
   };
 
@@ -357,6 +362,7 @@
           state.ui.pins.delete(c.id);
           pin.remove();
           renumberPins();
+          persist();
           toast("Comment removed");
         },
       });
@@ -370,12 +376,15 @@
     if (!state.on) return;
     if (e.target.closest("[data-fig-ui]")) return;
     // A highlight is clickable in every mode: the green mark opens its
-    // comment (highlight mode handles this at mousedown instead).
+    // comment. In highlight mode the MOUSEDOWN already opened it — this
+    // click must be swallowed whole, or it falls through to the dismiss
+    // branch below and closes the popover it just opened (the "flashes
+    // for a second then disappears" bug).
     const mk = e.target.closest && e.target.closest("mark[data-fig-highlight]");
-    if (mk && state.mode !== "highlight") {
+    if (mk) {
       e.preventDefault();
       e.stopPropagation();
-      openHighlightDetail(mk);
+      if (state.mode !== "highlight") openHighlightDetail(mk);
       return;
     }
     // Clicking anywhere else dismisses an open comment popover / settings.
@@ -392,12 +401,13 @@
     const target = e.target;
     openNote(x, y, (text) => {
       const c = {
-        id: nextId++, n: state.comments.length + 1, text, x, y,
+        id: nextId++, n: state.comments.length + 1, text, x, y, replies: [],
         targetPath: cssPath(target), targetText: snippet(target),
         ...(pageInfo(x, y) || {}),
       };
       state.comments.push(c);
       addPin(c);
+      persist();
     });
   };
 
@@ -708,6 +718,7 @@
     openNote(window.scrollX + rect.left, window.scrollY + rect.bottom, (note) => {
       h.note = note;
       state.highlights.push(h);
+      persist();
       marks.forEach((mk) => {
         mk.addEventListener("click", (e) => {
           e.preventDefault();
@@ -791,7 +802,7 @@
         pts.forEach((p, i) => { if (keep[i]) run.push(p); else flush(); });
         flush();
       }
-      if (changed) { state.strokes = out; redraw(); }
+      if (changed) { state.strokes = out; redraw(); persist(); }
     };
     let erasingDrag = false;
     canvas.addEventListener("pointerdown", (e) => {
@@ -834,11 +845,13 @@
       });
       live = null;
       redraw();
+      persist();
     });
     window.addEventListener("scroll", redraw, { passive: true });
     window.addEventListener("resize", resize);
     resize();
     state.ui.canvas = canvas;
+    state.ui.redraw = redraw; // restore() repaints saved strokes through this
   };
 
   // ---------- capture + dispatch ----------
@@ -950,6 +963,7 @@
       const ctx = state.ui.canvas.getContext("2d");
       ctx.clearRect(0, 0, state.ui.canvas.width, state.ui.canvas.height);
     }
+    clearPersisted(); // the trash button is the ONLY thing that deletes saved work
     toast("All markings cleared");
   };
 
@@ -1144,6 +1158,126 @@
     document.head.appendChild(style);
   };
 
+  // ---------- persistence (a refresh must NEVER lose annotations) ----------
+  // Every mutation saves the full annotation state, keyed by the page's URL
+  // (a PDF keys by its source URL — the viewer's own href changes per open),
+  // to BOTH chrome.storage.local (survives the page clearing its own storage)
+  // AND localStorage (survives an invalidated extension context). Re-toggling
+  // Fig on the same page restores everything: pins at their spots, highlights
+  // re-anchored by quote text, strokes redrawn, replies intact. Only the
+  // trash button deletes saved work (clearPersisted).
+
+  const persistKey = () =>
+    window.__figPDF ? "figSaved::pdf::" + window.__figPDF.src
+      : "figSaved::" + location.href.split("#")[0];
+
+  let persistTimer = 0;
+  const persistNow = () => {
+    clearTimeout(persistTimer);
+    persistTimer = 0;
+    const data = {
+      v: 1, savedAt: Date.now(), nextId,
+      comments: state.comments, highlights: state.highlights, strokes: state.strokes,
+    };
+    const key = persistKey();
+    try { chrome.storage.local.set({ [key]: data }); } catch { /* context gone; localStorage below still holds it */ }
+    try { localStorage.setItem(key, JSON.stringify(data)); } catch { /* page forbids storage; chrome.storage holds it */ }
+  };
+  const persist = () => { clearTimeout(persistTimer); persistTimer = setTimeout(persistNow, 250); };
+  // A refresh inside the debounce window must not eat the last mutation.
+  window.addEventListener("pagehide", () => { if (persistTimer) persistNow(); });
+
+  const clearPersisted = () => {
+    clearTimeout(persistTimer);
+    persistTimer = 0;
+    try { chrome.storage.local.remove(persistKey()); } catch { /* fine */ }
+    try { localStorage.removeItem(persistKey()); } catch { /* fine */ }
+  };
+
+  const normSpace = (s) => (s || "").replace(/\s+/g, " ").trim();
+
+  // Find a saved quote in the live DOM: walk text nodes (skipping fig UI and
+  // script/style), build a whitespace-normalized haystack with a map back to
+  // (node, offset), then locate the quote inside it.
+  const findQuoteRange = (root, quote) => {
+    const target = normSpace(quote);
+    if (!target || !root) return null;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => {
+        const p = n.parentElement;
+        if (!n.data || !p) return 2;
+        if (p.closest("[data-fig-ui]")) return 2;
+        const tag = p.tagName;
+        if (tag === "SCRIPT" || tag === "STYLE" || tag === "NOSCRIPT") return 2;
+        return 1;
+      },
+    });
+    const map = [];
+    let hay = "", lastSpace = true;
+    while (walker.nextNode()) {
+      const node = walker.currentNode, s = node.data;
+      for (let i = 0; i < s.length; i++) {
+        if (/\s/.test(s[i])) {
+          if (!lastSpace) { hay += " "; map.push({ node, i }); lastSpace = true; }
+        } else {
+          hay += s[i]; map.push({ node, i }); lastSpace = false;
+        }
+      }
+    }
+    const at = hay.indexOf(target);
+    if (at < 0) return null;
+    const a = map[at], b = map[at + target.length - 1];
+    const r = document.createRange();
+    try { r.setStart(a.node, a.i); r.setEnd(b.node, b.i + 1); } catch { return null; }
+    return r;
+  };
+
+  // Repaint a restored highlight. Scoped to its saved targetPath first (so a
+  // quote that appears twice lands in the right spot), whole page second.
+  // A highlight that can't be re-anchored stays RECORDED — annotations are
+  // inputs to generation, not decoration.
+  const repaintHighlight = (h) => {
+    let scope = null;
+    try { scope = h.targetPath ? document.querySelector(h.targetPath) : null; } catch { /* stale path */ }
+    const range = (scope && findQuoteRange(scope, h.text)) || findQuoteRange(document.body, h.text);
+    if (!range) return false;
+    return wrapRangeTextNodes(range, h.id).length > 0;
+  };
+
+  const restore = () => {
+    const key = persistKey();
+    let fromPage = null;
+    try { fromPage = JSON.parse(localStorage.getItem(key) || "null"); } catch { /* fine */ }
+    const apply = (fromExt) => {
+      if (!state.on) return;
+      if (state.comments.length || state.highlights.length || state.strokes.length) return;
+      const pick = (a, b) => (a && b ? ((a.savedAt || 0) >= (b.savedAt || 0) ? a : b) : a || b);
+      const data = pick(fromExt, fromPage);
+      if (!data) return;
+      state.comments = data.comments || [];
+      state.highlights = data.highlights || [];
+      state.strokes = data.strokes || [];
+      const total = state.comments.length + state.highlights.length + state.strokes.length;
+      if (!total) return;
+      let maxId = 0;
+      for (const it of [...state.comments, ...state.highlights]) maxId = Math.max(maxId, Number(it.id) || 0);
+      nextId = Math.max(Number(data.nextId) || 1, maxId + 1);
+      ensureLayerHeight();
+      state.comments.forEach(addPin);
+      renumberPins();
+      if (state.ui.redraw) state.ui.redraw();
+      let unpainted = state.highlights.filter((hl) => !repaintHighlight(hl));
+      // Late-rendering pages (SPAs hydrating, fonts reflowing): retry the
+      // ones that missed before treating them as recorded-only.
+      if (unpainted.length) {
+        setTimeout(() => { if (state.on) unpainted = unpainted.filter((hl) => !repaintHighlight(hl)); }, 1500);
+      }
+      toast("Fig restored " + total + " saved marking" + (total === 1 ? "" : "s") + " for this page");
+    };
+    try { chrome.storage.local.get(key, (res) => apply(res ? res[key] : null)); }
+    catch { apply(null); }
+  };
+
   const setup = () => {
     state.on = true;
     injectFont();
@@ -1157,9 +1291,11 @@
     document.addEventListener("mouseup", onMouseUp, true);
     const ver = (() => { try { return chrome.runtime.getManifest().version; } catch { return ""; } })();
     toast("Fig " + ver + " on — Draw, Comment, or Suggest, then press Fig");
+    restore();
   };
 
   const teardown = () => {
+    if (persistTimer) persistNow(); // flush before the state below is wiped
     state.on = false;
     state.mode = null;
     document.body.classList.remove("fig-mode-comment", "fig-mode-highlight", "fig-mode-draw");
