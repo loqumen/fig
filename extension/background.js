@@ -33,9 +33,14 @@ async function openPdfViewer(tab) {
     func: grabPdfInTab,
   });
   if (!result || result.error) {
-    console.warn("Fig: PDF grab failed:", result && result.error);
+    // Failure is always VISIBLE (product standard): badge it, never
+    // console-only.
+    chrome.action.setBadgeText({ tabId: tab.id, text: "!" });
+    chrome.action.setBadgeBackgroundColor({ color: "#8a3b2e" });
+    chrome.action.setTitle({ tabId: tab.id, title: "Fig couldn't read this PDF: " + ((result && result.error) || "no bytes returned") });
     return;
   }
+  chrome.action.setBadgeText({ tabId: tab.id, text: "" });
   const key = "figpdf-" + tab.id + "-" + Date.now();
   const name = (() => { try { return decodeURIComponent(new URL(tab.url).pathname.split("/").pop()); } catch { return "document.pdf"; } })();
   await chrome.storage.session.set({ [key]: { src: tab.url, b64: result.b64, name } });
@@ -85,20 +90,50 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  // "All figs" popover: human-readable job inventory from the daemon.
+  if (msg && msg.type === "fig-jobs") {
+    (async () => {
+      try {
+        const r = await fetch("http://127.0.0.1:41414/jobs.json");
+        sendResponse({ ok: r.ok, data: await r.json() });
+      } catch {
+        sendResponse({ ok: false, error: "companion not reachable" });
+      }
+    })();
+    return true;
+  }
+
+  // Settings ops from the overlay's gear popover -> native host (fs access).
+  if (msg && ["fig-settings-get", "fig-settings-set", "fig-link-start"].includes(msg.type)) {
+    (async () => {
+      const map = { "fig-settings-get": "settings-get", "fig-settings-set": "settings-set", "fig-link-start": "link-start" };
+      const out = await new Promise((resolve) => {
+        try {
+          chrome.runtime.sendNativeMessage(FIG_HOST,
+            { type: map[msg.type], settings: msg.settings, provider: msg.provider },
+            (resp) => resolve(chrome.runtime.lastError || !resp ? { ok: false, error: "companion not reachable" } : resp));
+        } catch { resolve({ ok: false, error: "companion not reachable" }); }
+      });
+      sendResponse(out);
+    })();
+    return true;
+  }
+
   // Relay from content script: fetch to the companion goes through the worker
   // so the request originates from the extension, not the page origin.
   if (msg && msg.type === "fig-dispatch") {
     (async () => {
       try {
-        const { token } = await chrome.storage.local.get("token");
-        const res = await fetch("http://127.0.0.1:41414/fig", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Fig-Token": token || "" },
-          body: JSON.stringify(msg.payload),
-        });
-        const data = await res.json();
-        sendResponse({ ok: res.ok, data });
-        if (res.ok && data.statusUrl) chrome.tabs.create({ url: data.statusUrl });
+        // Preferred path: the native host. The browser only lets the extension
+        // IDs named in the host manifest speak to it, so no token is needed and
+        // the user never pastes one. Falls back to the old localhost+token path
+        // when the host is not installed, so existing setups keep working.
+        let out = await sendNative(msg.payload);
+        if (!out) out = await sendLocalHttp(msg.payload);
+        sendResponse(out);
+        if (out.ok && out.data && out.data.statusUrl) {
+          openFigTab(out.data.statusUrl);
+        }
       } catch (e) {
         sendResponse({ ok: false, error: String(e) });
       }
@@ -106,3 +141,45 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 });
+
+
+// One Fig tab, always: every dispatch reuses the existing companion tab
+// (navigated + focused) instead of piling up a new tab per run. The
+// 127.0.0.1:41414 host permission is what lets tabs.query see the URL.
+async function openFigTab(url) {
+  try {
+    const tabs = await chrome.tabs.query({ url: "http://127.0.0.1:41414/*" });
+    if (tabs.length) {
+      await chrome.tabs.update(tabs[0].id, { url, active: true });
+      if (tabs[0].windowId != null) chrome.windows.update(tabs[0].windowId, { focused: true });
+      return;
+    }
+  } catch (e) { /* fall through to a fresh tab */ }
+  chrome.tabs.create({ url });
+}
+
+// --- companion transports -------------------------------------------------
+const FIG_HOST = "com.loqumen.fig";
+
+// Returns null (not an error) when the native host is unavailable, so the
+// caller can fall back rather than surfacing a confusing failure.
+function sendNative(payload) {
+  return new Promise((resolve) => {
+    try {
+      chrome.runtime.sendNativeMessage(FIG_HOST, { type: "dispatch", payload }, (resp) => {
+        if (chrome.runtime.lastError || !resp) return resolve(null);
+        resolve(resp);
+      });
+    } catch { resolve(null); }
+  });
+}
+
+async function sendLocalHttp(payload) {
+  const { token } = await chrome.storage.local.get("token");
+  const res = await fetch("http://127.0.0.1:41414/fig", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Fig-Token": token || "" },
+    body: JSON.stringify(payload),
+  });
+  return { ok: res.ok, data: await res.json() };
+}

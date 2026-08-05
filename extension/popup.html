@@ -23,26 +23,35 @@
     padding: 6px 8px;
     font: inherit;
   }
+  /* Flat fill, no outline; DM Sans 500 sentence case, matching every other
+     Fig button. */
   button {
     margin-top: 8px;
-    border: 1px solid #1a1a1a;
+    width: 100%;
+    border: none;
     background: #1a1a1a;
     color: #fafaf8;
     border-radius: 6px;
-    padding: 6px 12px;
-    font: inherit;
+    padding: 7px 12px;
+    font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    text-transform: none;
     cursor: pointer;
   }
   .status { margin-top: 8px; color: #4a4a46; }
+  .conn { display: flex; align-items: center; gap: 6px; margin-top: 10px; color: #4a4a46; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #d4d2cc; flex: none; }
+  .dot.ok { background: #2C9F28; }
+  .dot.bad { background: #916031; }
+  .conn a { color: #1a1a1a; }
 </style>
 </head>
 <body>
   <h1>Fig</h1>
   <p>Press <b>⌥ Option+Shift+F</b> on any page to open the tools. The companion must be running locally.</p>
   <button id="open">Open Fig on this page</button>
-  <label for="token">Companion token (from ~/.fig/settings.json)</label>
-  <input id="token" type="password" autocomplete="off">
-  <button id="save">Save</button>
+  <div class="conn" id="conn"><span class="dot" id="dot"></span><span id="connText">Checking companion…</span></div>
   <div class="status" id="status"></div>
   <script src="popup.js"></script>
 </body>

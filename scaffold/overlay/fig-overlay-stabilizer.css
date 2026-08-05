@@ -1,0 +1,19 @@
+/* ══════════════════════════════════════════════
+   Fig Overlay Stabilizer — full-page replica mode only
+   ══════════════════════════════════════════════
+
+   MUST be injected on top of any page that has scroll-triggered
+   reveal animations (IntersectionObserver-driven fade-in classes).
+
+   WHY: comment pins are stored as % of body.scrollHeight. If the body
+   grows taller after load (because reveal animations fire during scroll),
+   pins drift from where they were placed.
+
+   FIX: force all reveal classes visible immediately so body height is
+   final at page load, before any pin can be placed.
+*/
+
+body { position: relative !important; }
+
+.reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+.reveal-delay-1, .reveal-delay-2, .reveal-delay-3, .reveal-delay-4 { transition: none !important; }

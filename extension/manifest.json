@@ -1,12 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Fig",
-  "version": "0.1.8",
+  "version": "0.3.6",
   "description": "Annotate any page, press Fig, and a revised page is generated from your markings.",
   "permissions": [
     "activeTab",
     "scripting",
-    "storage"
+    "storage",
+    "nativeMessaging"
   ],
   "host_permissions": [
     "http://127.0.0.1:41414/*",
@@ -43,11 +44,13 @@
   "web_accessible_resources": [
     {
       "resources": [
-        "vendor/josefin-sans-500.woff2"
+        "vendor/josefin-sans-500.woff2",
+        "vendor/dm-sans-500.woff2"
       ],
       "matches": [
         "<all_urls>"
       ]
     }
-  ]
+  ],
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwxMIZ7l6wXB+35/dIB86FKjYyiuUi+y9XdcTS/YO860vIM4RDIcP/gHoXtqxtP80ZnRFhKrs3Ii92x12Bd77HSzh1NmnPTzpEwXgOVgnxFitd7k1O0LPJSjZISr4RKytWntk2EMvNJsiCDjLP5KbTEVHKm9LBXHV3jWs1wtzJVRofNFmmGP4MAnXMtk37KU97VRRj6RjsDnsgFIpFxhHyzje9EB7n/BSnKqzcuOUCW+rBqaVo+5PEs1fcD13X4Gs6q+oxdRS/gJIE0Ah35hZbh4OpGQ4rp3t4RH8P5oDoyYHUXwgBJgroWOgKwlVitKrYjVbETVBe9DZzZKJsRvumwIDAQAB"
 }

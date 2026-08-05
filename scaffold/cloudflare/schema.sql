@@ -1,0 +1,10 @@
+CREATE TABLE IF NOT EXISTS comments (
+  version TEXT NOT NULL,
+  id TEXT NOT NULL,
+  data TEXT NOT NULL,
+  PRIMARY KEY (version, id)
+);
+CREATE TABLE IF NOT EXISTS strokes (
+  version TEXT NOT NULL PRIMARY KEY,
+  data TEXT NOT NULL
+);

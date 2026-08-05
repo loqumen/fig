@@ -1,9 +1,16 @@
 /* Fig overlay UI — matches the standard /fig review toolbar (Loqumen white
    theme: warm-neutral pill, line icons, near-black active state), plus the
-   Fig dispatch button in amethyst set in the Loqumen logo font.
+   Fig dispatch button set in the Loqumen supporting font.
    Every declaration is !important: this CSS is injected into arbitrary
    pages whose own styles (resets, button rules, svg rules) otherwise win.
-   Every element carries data-fig-ui so the serializer strips the chrome. */
+   Every element carries data-fig-ui so the serializer strips the chrome.
+
+   Buttons are FLAT: solid fills, no gradients, no bevels (the 2026-07-30
+   button-depth study's gradient treatment was tried and reverted — Brady:
+   "undo the depth entirely for the buttons, just keep the DM sans font").
+   What survived that study: no outlines anywhere (markings 21 and 23), and
+   DM Sans 500 in sentence case on every button, shipped as a vendored woff2
+   ('Fig DM Sans') so button type is identical on every host page. */
 
 .fig-toolbar[data-fig-ui] {
   position: fixed !important;
@@ -19,9 +26,9 @@
   height: auto !important;
   margin: 0 !important;
   background: #fafaf8 !important;
-  border: 1px solid #e8e6e1 !important;
+  border: none !important;
   border-radius: 14px !important;
-  padding: 6px !important;
+  padding: 7px !important;
   box-shadow: 0 6px 24px rgba(26, 26, 26, 0.12) !important;
   font-family: 'DM Sans', -apple-system, system-ui, sans-serif !important;
   line-height: 1 !important;
@@ -86,7 +93,7 @@
   padding: 2px 16px 0 !important;
   background: #2C9F28 !important;
   color: #fafaf8 !important;
-  font-family: 'Fig Josefin', 'Josefin Sans', 'DM Sans', system-ui, sans-serif !important;
+  font-family: 'Fig DM Sans', 'DM Sans', -apple-system, system-ui, sans-serif !important;
   font-size: 15px !important;
   font-weight: 500 !important;
   letter-spacing: 0.02em !important;
@@ -105,9 +112,9 @@
   gap: 6px !important;
   margin: 0 4px 0 0 !important;
   background: #fafaf8 !important;
-  border: 1px solid #e8e6e1 !important;
+  border: none !important;
   border-radius: 10px !important;
-  padding: 5px 9px !important;
+  padding: 6px 9px !important;
 }
 
 .fig-draw-colors[data-fig-ui].fig-visible { display: flex !important; }
@@ -117,6 +124,8 @@
   height: 20px !important;
   min-width: 20px !important;
   border-radius: 50% !important;
+  /* No outline in the idle state; the ring below is the ACTIVE indicator,
+     functional encoding rather than chrome, so it stays. */
   border: 2px solid transparent !important;
   cursor: pointer !important;
   margin: 0 !important;
@@ -147,8 +156,8 @@
   background: #2C9F28 !important;
   color: #fafaf8 !important;
   font-size: 12px !important;
-  font-weight: 700 !important;
-  font-family: 'DM Sans', -apple-system, system-ui, sans-serif !important;
+  font-weight: 500 !important;
+  font-family: 'Fig DM Sans', 'DM Sans', -apple-system, system-ui, sans-serif !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
@@ -202,15 +211,17 @@
 }
 
 .fig-note[data-fig-ui] button {
-  border: 1px solid #e8e6e1 !important;
+  border: none !important;
   background: #fafaf8 !important;
   color: #4a4a46 !important;
   border-radius: 6px !important;
   padding: 4px 10px !important;
   margin: 0 !important;
   cursor: pointer !important;
-  font-family: 'DM Sans', -apple-system, system-ui, sans-serif !important;
+  font-family: 'Fig DM Sans', 'DM Sans', -apple-system, system-ui, sans-serif !important;
   font-size: 13px !important;
+  font-weight: 500 !important;
+  text-transform: none !important;
   line-height: 1.4 !important;
   width: auto !important;
   height: auto !important;
@@ -219,7 +230,7 @@
 .fig-note[data-fig-ui] button.fig-save {
   background: #1a1a1a !important;
   color: #fafaf8 !important;
-  border-color: #1a1a1a !important;
+  border: none !important;
 }
 
 mark[data-fig-highlight] {
@@ -311,4 +322,251 @@ body.fig-mode-highlight, body.fig-mode-highlight * {
   display: block !important;
   fill: currentColor !important;
   stroke: none !important;
+}
+
+.fig-go-busy { opacity: 0.55; pointer-events: none; }
+
+/* Detail popover: the saved comment behind a pin or highlight, with
+   quote, replies, a reply box, and Edit / Delete (the /fig skill's detail). */
+.fig-detail[data-fig-ui] { width: 280px !important; }
+
+.fig-detail[data-fig-ui] .fig-detail-quote {
+  border-left: 3px solid rgba(44, 159, 40, 0.55) !important;
+  padding: 2px 0 2px 8px !important;
+  margin: 0 0 8px !important;
+  color: #4a4a46 !important;
+  font-size: 12px !important;
+  font-style: italic !important;
+  line-height: 1.45 !important;
+}
+
+.fig-detail[data-fig-ui] .fig-detail-text {
+  color: #1a1a1a !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  margin: 0 0 4px !important;
+  white-space: pre-wrap !important;
+}
+
+.fig-detail[data-fig-ui] .fig-detail-replies {
+  border-top: 1px solid #e8e6e1 !important;
+  margin: 8px 0 0 !important;
+  padding: 6px 0 0 !important;
+}
+
+.fig-detail[data-fig-ui] .fig-detail-reply {
+  display: flex !important;
+  align-items: flex-start !important;
+  justify-content: space-between !important;
+  gap: 6px !important;
+  padding: 3px 0 !important;
+}
+
+.fig-detail[data-fig-ui] .fig-detail-reply-text {
+  color: #4a4a46 !important;
+  font-size: 12px !important;
+  line-height: 1.45 !important;
+  white-space: pre-wrap !important;
+  min-width: 0 !important;
+}
+
+.fig-detail[data-fig-ui] .fig-detail-reply-x {
+  border: none !important;
+  background: none !important;
+  color: #9a9790 !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+  padding: 0 2px !important;
+  cursor: pointer !important;
+  flex: 0 0 auto !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+.fig-detail[data-fig-ui] .fig-detail-reply-x:hover { color: #8a3b2e !important; }
+
+.fig-detail[data-fig-ui] .fig-detail-replybox {
+  min-height: 30px !important;
+  margin-top: 8px !important;
+  font-size: 12px !important;
+  padding: 5px 6px !important;
+}
+
+/* clickable highlights advertise themselves */
+mark[data-fig-highlight] { cursor: pointer !important; }
+
+/* Pin being dragged: no hover-scale fighting the drag, slight lift. */
+.fig-pin[data-fig-ui].fig-pin-dragging {
+  transform: translate(-50%, -50%) scale(1.2) !important;
+  box-shadow: 0 6px 18px rgba(26, 26, 26, 0.35) !important;
+  cursor: grabbing !important;
+  transition: none !important;
+}
+
+/* "All figs" popover — the grid button's human-readable job list. */
+.fig-figs-pop[data-fig-ui] {
+  position: fixed !important;
+  bottom: 84px !important;
+  right: 24px !important;
+  z-index: 2147483646 !important;
+  width: 330px !important;
+  max-height: 62vh !important;
+  overflow: auto !important;
+  background: #fafaf8 !important;
+  color: #1a1a1a !important;
+  border: 1px solid #e8e6e1 !important;
+  border-radius: 12px !important;
+  padding: 16px !important;
+  box-shadow: 0 10px 32px rgba(26, 26, 26, 0.16) !important;
+  font-family: 'DM Sans', -apple-system, system-ui, sans-serif !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  text-align: left !important;
+  animation: fig-set-pop 0.22s cubic-bezier(0.34, 1.3, 0.64, 1) both !important;
+  transform-origin: bottom right !important;
+}
+.fig-figs-pop[data-fig-ui] h3 { font-size: 13px !important; font-weight: 500 !important; margin: 0 0 6px !important; color: #1a1a1a !important; }
+.fig-figs-pop[data-fig-ui] .fig-figs-row {
+  padding: 9px 0 !important;
+  border-top: 1px solid #e8e6e1 !important;
+  cursor: pointer !important;
+  margin: 0 !important;
+}
+.fig-figs-pop[data-fig-ui] .fig-figs-row:first-child { border-top: none !important; }
+.fig-figs-pop[data-fig-ui] .fig-figs-title {
+  font-size: 13px !important; font-weight: 500 !important; color: #1a1a1a !important;
+  overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important;
+}
+.fig-figs-pop[data-fig-ui] .fig-figs-row:hover .fig-figs-title { color: #2C9F28 !important; }
+.fig-figs-pop[data-fig-ui] .fig-figs-meta { font-size: 11.5px !important; color: #9a9790 !important; margin-top: 1px !important; }
+.fig-figs-pop[data-fig-ui] .fig-figs-gen { color: #2C9F28 !important; }
+.fig-figs-pop[data-fig-ui] .fig-figs-err { color: #8a3b2e !important; }
+.fig-figs-pop[data-fig-ui] .fig-figs-empty { color: #9a9790 !important; font-size: 12.5px !important; padding: 8px 0 !important; }
+
+/* Help card — the /fig skill's onboarding card, restyled for the overlay. */
+.fig-onboard[data-fig-ui] {
+  position: fixed !important;
+  right: 24px !important;
+  bottom: 84px !important;
+  z-index: 2147483646 !important;
+  width: 320px !important;
+  max-width: calc(100vw - 48px) !important;
+  background: #fafaf8 !important;
+  border: 1px solid #e8e6e1 !important;
+  border-radius: 16px !important;
+  padding: 22px 22px 18px !important;
+  box-shadow: 0 12px 40px rgba(26, 26, 26, 0.18) !important;
+  font-family: 'DM Sans', -apple-system, system-ui, sans-serif !important;
+  color: #4a4a46 !important;
+  text-align: left !important;
+  opacity: 0 !important;
+  transform: translateY(8px) !important;
+  transition: opacity 0.25s ease, transform 0.25s ease !important;
+}
+.fig-onboard[data-fig-ui].fig-onboard-visible { opacity: 1 !important; transform: none !important; }
+.fig-onboard[data-fig-ui] .fig-onboard-head { display: flex !important; align-items: center !important; justify-content: space-between !important; margin: 0 0 4px !important; }
+.fig-onboard[data-fig-ui] .fig-onboard-head h3 { margin: 0 !important; font-size: 16px !important; font-weight: 500 !important; color: #1a1a1a !important; letter-spacing: -0.01em !important; }
+.fig-onboard[data-fig-ui] .fig-onboard-x {
+  background: none !important; border: none !important; font-size: 22px !important; line-height: 1 !important;
+  color: #9a9790 !important; cursor: pointer !important; padding: 0 2px !important; width: auto !important; height: auto !important;
+}
+.fig-onboard[data-fig-ui] .fig-onboard-x:hover { color: #1a1a1a !important; }
+.fig-onboard[data-fig-ui] .fig-onboard-sub { margin: 0 0 16px !important; font-size: 13px !important; font-weight: 300 !important; line-height: 1.6 !important; color: #9a9790 !important; }
+.fig-onboard[data-fig-ui] .fig-onboard-rows { display: flex !important; flex-direction: column !important; gap: 13px !important; margin: 0 0 18px !important; }
+.fig-onboard[data-fig-ui] .fig-onboard-row { display: flex !important; gap: 12px !important; align-items: flex-start !important; }
+.fig-onboard[data-fig-ui] .fig-onboard-icon {
+  flex: 0 0 auto !important; width: 34px !important; height: 34px !important; border-radius: 9px !important;
+  background: #f0eee9 !important; display: flex !important; align-items: center !important; justify-content: center !important; color: #1a1a1a !important;
+}
+.fig-onboard[data-fig-ui] .fig-onboard-icon svg { width: 18px !important; height: 18px !important; fill: none !important; stroke: currentColor !important; stroke-width: 2 !important; }
+.fig-onboard[data-fig-ui] .fig-onboard-text { display: flex !important; flex-direction: column !important; gap: 1px !important; padding-top: 2px !important; }
+.fig-onboard[data-fig-ui] .fig-onboard-name { font-size: 13px !important; font-weight: 500 !important; color: #1a1a1a !important; }
+.fig-onboard[data-fig-ui] .fig-onboard-desc { font-size: 12.5px !important; font-weight: 300 !important; line-height: 1.5 !important; color: #9a9790 !important; }
+.fig-onboard[data-fig-ui] .fig-onboard-done {
+  width: 100% !important; background: #2C9F28 !important; color: #fafaf8 !important; border: none !important;
+  border-radius: 10px !important; padding: 10px !important;
+  font-family: 'Fig DM Sans', 'DM Sans', -apple-system, system-ui, sans-serif !important;
+  font-size: 13px !important; font-weight: 500 !important; letter-spacing: 0.02em !important; cursor: pointer !important;
+  height: auto !important; transition: background 150ms cubic-bezier(0.32, 0.72, 0, 1) !important;
+}
+.fig-onboard[data-fig-ui] .fig-onboard-done:hover { background: #26881f !important; }
+
+/* Settings popover — ALL Fig settings live behind the toolbar gear. */
+.fig-settings-pop[data-fig-ui] {
+  position: fixed !important;
+  bottom: 84px !important;
+  right: 24px !important;
+  z-index: 2147483646 !important;
+  width: 300px !important;
+  background: #fafaf8 !important;
+  color: #1a1a1a !important;
+  border: 1px solid #e8e6e1 !important;
+  border-radius: 12px !important;
+  padding: 16px !important;
+  box-shadow: 0 10px 32px rgba(26, 26, 26, 0.16) !important;
+  font-family: 'DM Sans', -apple-system, system-ui, sans-serif !important;
+  font-size: 13px !important;
+  line-height: 1.5 !important;
+  text-align: left !important;
+  animation: fig-set-pop 0.22s cubic-bezier(0.34, 1.3, 0.64, 1) both !important;
+  transform-origin: bottom right !important;
+}
+@keyframes fig-set-pop {
+  from { opacity: 0; transform: scale(0.94) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.fig-settings-pop[data-fig-ui] h3 { font-size: 13px !important; font-weight: 500 !important; margin: 0 0 10px !important; color: #1a1a1a !important; }
+.fig-settings-pop[data-fig-ui] .fig-set-label {
+  font-size: 11px !important; letter-spacing: 0.08em !important; text-transform: uppercase !important;
+  color: #9a9790 !important; margin: 12px 0 4px !important;
+}
+.fig-settings-pop[data-fig-ui] label {
+  display: flex !important; gap: 8px !important; align-items: flex-start !important;
+  padding: 5px 0 !important; cursor: pointer !important; color: #1a1a1a !important; margin: 0 !important;
+}
+.fig-settings-pop[data-fig-ui] label.fig-dim { opacity: 0.55 !important; cursor: not-allowed !important; }
+.fig-settings-pop[data-fig-ui] label input { margin-top: 4px !important; accent-color: #2C9F28 !important; }
+.fig-settings-pop[data-fig-ui] label em {
+  display: block !important; font-style: normal !important; color: #9a9790 !important;
+  font-size: 11.5px !important; line-height: 1.45 !important;
+}
+.fig-settings-pop[data-fig-ui] .fig-set-picker {
+  display: flex !important; align-items: center !important; justify-content: space-between !important;
+  gap: 10px !important; padding: 4px 0 !important;
+}
+.fig-settings-pop[data-fig-ui] .fig-set-picker span { color: #1a1a1a !important; font-size: 13px !important; }
+.fig-settings-pop[data-fig-ui] .fig-set-picker select {
+  font-family: 'DM Sans', -apple-system, system-ui, sans-serif !important;
+  font-size: 12.5px !important;
+  color: #1a1a1a !important;
+  background: #ffffff !important;
+  border: 1px solid #e8e6e1 !important;
+  border-radius: 7px !important;
+  padding: 4px 8px !important;
+  margin: 0 !important;
+  width: 150px !important;
+  cursor: pointer !important;
+}
+.fig-settings-pop[data-fig-ui] .fig-set-hint {
+  color: #9a9790 !important; font-size: 11.5px !important; line-height: 1.45 !important; padding: 2px 0 4px !important;
+}
+.fig-settings-pop[data-fig-ui] .fig-set-note { color: #4a4a46 !important; font-size: 12.5px !important; padding: 4px 0 !important; }
+.fig-settings-pop[data-fig-ui] .fig-set-note em { color: #9a9790 !important; font-style: normal !important; font-size: 11.5px !important; }
+.fig-settings-pop[data-fig-ui] .fig-set-err { color: #8a3b2e !important; font-size: 12px !important; margin-top: 6px !important; }
+.fig-settings-pop[data-fig-ui] .fig-set-row {
+  display: flex !important; align-items: center !important; justify-content: space-between !important; margin-top: 12px !important;
+}
+.fig-settings-pop[data-fig-ui] .fig-set-saved { color: #2C9F28 !important; font-size: 12px !important; }
+.fig-settings-pop[data-fig-ui] .fig-set-save,
+.fig-settings-pop[data-fig-ui] .fig-set-link {
+  background: #2C9F28 !important;
+  color: #fafaf8 !important; border: none !important;
+  border-radius: 9px !important; padding: 7px 16px !important;
+  font-family: 'Fig DM Sans', 'DM Sans', inherit !important; font-size: 13px !important; font-weight: 500 !important;
+  text-transform: none !important; cursor: pointer !important;
+  width: auto !important; height: auto !important;
+}
+.fig-settings-pop[data-fig-ui] .fig-set-link {
+  background: #1a1a1a !important;
+  margin-top: 8px !important;
 }
