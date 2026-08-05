@@ -312,6 +312,59 @@ echo "$IDX" | grep -q 'class="jt"[^>]*>Test Page<' && ok "index leads with the h
 echo "$IDX" | grep -q "1 marking" && ok "index shows marking count" || bad "no marking count"
 echo "$IDX" | grep -q 'title="'$SLUG'"' && ok "slug demoted to hover title" || bad "slug not on hover"
 
+echo "== T19 restart reconciliation: an interrupted job never spins forever =="
+# A job left 'generating' by a dead daemon, whose child pid is gone and whose
+# page DID change -> finalized done on the next start. (The 2026-08-05 case:
+# figd restarted mid-generation and the job had no exit handler left.)
+ORPH="$T/home/.fig/jobs/orphan-job-0101120000"
+mkdir -p "$ORPH"
+echo '{"t":1}' > "$ORPH/annotations.json"
+echo '<html>BASE</html>' > "$ORPH/edited.html"
+BASE_HASH=$(shasum -a 256 "$ORPH/edited.html" | cut -d' ' -f1)
+echo '<html>CHANGED BY THE ORPHANED RUN</html>' > "$ORPH/edited.html"
+python3 -c "
+import json
+json.dump({'phase':'generating','type':'html','title':'Orphan','baseHash':'$BASE_HASH','childPid':999999},
+          open('$ORPH/.fig-state.json','w'))"
+# same shape but the page never changed -> must land in error, not done
+ORPH2="$T/home/.fig/jobs/orphan-nochange-0101120000"
+mkdir -p "$ORPH2"
+echo '{"t":1}' > "$ORPH2/annotations.json"
+echo '<html>BASE</html>' > "$ORPH2/edited.html"
+python3 -c "
+import json
+json.dump({'phase':'generating','type':'html','title':'Orphan2','baseHash':'$BASE_HASH','childPid':999999},
+          open('$ORPH2/.fig-state.json','w'))"
+kill $FIGD_PID 2>/dev/null; sleep 0.4
+HOME="$T/home" FIG_PORT=$PORT node "$FIGD" >> "$T/figd.log" 2>&1 &
+FIGD_PID=$!
+sleep 1.0
+ST=$(curl -s "http://127.0.0.1:$PORT/jobs/orphan-job-0101120000/state" | python3 -c "import json,sys;print(json.load(sys.stdin)['phase'])")
+check "changed orphan finalized as done" "$ST" "done"
+ST=$(curl -s "http://127.0.0.1:$PORT/jobs/orphan-nochange-0101120000/state" | python3 -c "import json,sys;print(json.load(sys.stdin)['phase'])")
+check "unchanged orphan finalized as error (Retry available)" "$ST" "error"
+
+echo "== T18 publish on demand =="
+# publishing off (target=localhost) must refuse rather than silently no-op
+python3 -c "
+import json
+p='$T/home/.fig/settings.json'; d=json.load(open(p)); d['target']='localhost'; json.dump(d,open(p,'w'))"
+C=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$PORT/publish" -H "X-Fig-Token: testtoken123" -H "Content-Type: application/json" -d '{}')
+check "publish with publishing off → 409" "$C" "409"
+C=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$PORT/publish" -H "X-Fig-Token: wrong" -d '{}')
+check "publish with bad token → 403" "$C" "403"
+# turn publishing on (legacy vercel path; the fake vercel CLI just needs to exist)
+python3 -c "
+import json
+p='$T/home/.fig/settings.json'; d=json.load(open(p)); d['target']='vercel'; json.dump(d,open(p,'w'))"
+mkdir -p "$T/edits/public"
+R=$(curl -s -X POST "http://127.0.0.1:$PORT/publish" -H "X-Fig-Token: testtoken123" -H "Content-Type: application/json" -d "{\"slug\":\"$SLUG\"}")
+echo "$R" | grep -q "\"publishing\":\"$SLUG\"" && ok "publish accepts a named job" || bad "publish rejected the job ($R)"
+D=$(curl -s "http://127.0.0.1:$PORT/jobs/$SLUG/deploy")
+echo "$D" | grep -qi "deploy" && ok "deploy status endpoint answers" || bad "no deploy status ($D)"
+C=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$PORT/publish" -H "X-Fig-Token: testtoken123" -H "Content-Type: application/json" -d '{"slug":"no-such-job-0000"}')
+check "publish of an unknown job → 404" "$C" "404"
+
 echo "== T12 settings page removed (gear popover owns settings) =="
 C=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/settings")
 check "GET /settings → 404" "$C" "404"

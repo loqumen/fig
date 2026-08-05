@@ -25,9 +25,19 @@
           return;
         }
         if (msg && msg.type === "fig-settings-get") {
-          // target=vercel is THE recourse regression: the link-a-new-site
-          // section must still render (2026-08-04, Brady: "no recourse").
-          cb({ ok: true, data: { target: "vercel", model: "", effort: "", legacyVercel: true, publish: null } });
+          // Linked site AND legacy project available: exercises the review-site
+          // dropdown, the publish action, and the collapsed link flow.
+          cb({ ok: true, data: { target: "linked", model: "", effort: "", legacyVercel: true,
+            publish: { status: "linked", provider: "vercel", url: "https://fig-review-test.vercel.app" } } });
+          return;
+        }
+        if (msg && msg.type === "fig-publish") {
+          window.__figPublishCalls = (window.__figPublishCalls || []).concat([msg.slug ?? null]);
+          cb({ ok: true, data: { publishing: "alpha-0801", title: "Alpha Landing Page" } });
+          return;
+        }
+        if (msg && msg.type === "fig-deploy-status") {
+          cb({ ok: true, data: { deploy: "Published: https://fig-review-test.vercel.app/alpha-0801/" } });
           return;
         }
         cb({ ok: true });
@@ -182,14 +192,30 @@
     helpPop.querySelector(".fig-onboard-done").click();
     ok("Got it closes the help card", !document.querySelector(".fig-onboard"));
 
-    // --- settings: switching recourse always available -------------------
+    // --- settings: toggles, dropdown, publish action ---------------------
     const gearBtn = btns2[6];
     gearBtn.click();
     await sleep(100);
     const setPop = document.querySelector(".fig-settings-pop");
     ok("gear opens settings", !!setPop);
-    ok("provider choice offered even when target=vercel (recourse)", !!setPop && setPop.querySelectorAll('input[name="fig-provider"]').length === 2);
-    ok("review-site destination radio present", !!setPop && !!setPop.querySelector('input[name="fig-dest"][value="vercel"]'));
+    const pubToggle = setPop && setPop.querySelector('input[name="fig-publish-on"]');
+    ok("publishing is a toggle, not radio dots", !!pubToggle && pubToggle.type === "checkbox");
+    ok("toggle reflects the saved state (on)", !!pubToggle && pubToggle.checked);
+    ok("no radio inputs left in settings", !!setPop && setPop.querySelectorAll('input[type="radio"]').length === 0);
+    const destSel = setPop && setPop.querySelector('select[name="fig-dest"]');
+    ok("review site is a dropdown with both destinations", !!destSel && destSel.options.length === 2 && destSel.value === "linked");
+    const linkBox = setPop && setPop.querySelector(".fig-set-linkbox");
+    ok("link-a-site flow is collapsed by default (not mandatory-looking)", !!linkBox && linkBox.hidden);
+    setPop.querySelector(".fig-set-more").click();
+    ok("link flow expands on request", !linkBox.hidden && !!linkBox.querySelector('select[name="fig-provider"]'));
+    const pubBtn = setPop.querySelector(".fig-set-publish");
+    ok("publish button present", !!pubBtn && /Publish/.test(pubBtn.textContent));
+    pubBtn.click();
+    await sleep(50);
+    ok("publish button calls the companion", (window.__figPublishCalls || []).length === 1);
+    ok("publish button shows progress", /Publishing/.test(pubBtn.textContent));
+    await sleep(2300); // the deploy poll
+    ok("publish reports the deployed URL", /fig-review-test\.vercel\.app/.test(setPop.querySelector(".fig-set-pubnote").textContent));
     gearBtn.click();
 
     // --- trash is the only real delete -----------------------------------

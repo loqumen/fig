@@ -105,6 +105,46 @@ function jobs() {
   });
 }
 
+// Publish a finished fig on demand (slug omitted = the newest one).
+function publish(slug) {
+  return new Promise((resolve) => {
+    const body = Buffer.from(JSON.stringify({ slug: slug || null }));
+    const req = http.request(
+      { host: "127.0.0.1", port: PORT, path: "/publish", method: "POST",
+        headers: { "Content-Type": "application/json", "Content-Length": body.length, "X-Fig-Token": token() } },
+      (res) => {
+        let out = "";
+        res.on("data", (c) => (out += c));
+        res.on("end", () => {
+          let data; try { data = JSON.parse(out); } catch { data = { error: out.slice(0, 300) }; }
+          resolve({ ok: res.statusCode >= 200 && res.statusCode < 300, data });
+        });
+      }
+    );
+    req.on("error", (e) => resolve({ ok: false, data: { error: "companion not running (" + e.code + ")" } }));
+    req.end(body);
+  });
+}
+
+// Publish outcome for one job (polled after Publish).
+function deployStatus(slug) {
+  return new Promise((resolve) => {
+    const req = http.request(
+      { host: "127.0.0.1", port: PORT, path: "/jobs/" + encodeURIComponent(slug) + "/deploy", method: "GET" },
+      (res) => {
+        let out = "";
+        res.on("data", (c) => (out += c));
+        res.on("end", () => {
+          try { resolve({ ok: true, data: JSON.parse(out) }); }
+          catch { resolve({ ok: false, data: { error: "bad response" } }); }
+        });
+      }
+    );
+    req.on("error", (e) => resolve({ ok: false, data: { error: e.code } }));
+    req.end();
+  });
+}
+
 function linkStart(provider) {
   // Spawning from THIS process would inherit Chrome's provenance context —
   // macOS then quarantines everything npx downloads and Gatekeeper blocks
@@ -145,6 +185,8 @@ process.stdin.on("data", async (chunk) => {
     if (msg && msg.type === "settings-get") { send(settingsGet()); continue; }
     if (msg && msg.type === "settings-set") { send(settingsSet(msg.settings || {})); continue; }
     if (msg && msg.type === "jobs") { answer(() => jobs()); continue; }
+    if (msg && msg.type === "publish") { answer(() => publish(msg.slug)); continue; }
+    if (msg && msg.type === "deploy-status") { answer(() => deployStatus(msg.slug)); continue; }
     if (msg && msg.type === "link-start") { answer(() => linkStart(msg.provider)); continue; }
     answer(() => dispatch(msg && msg.payload ? msg.payload : msg));
   }

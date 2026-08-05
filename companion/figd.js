@@ -241,6 +241,11 @@ function runGeneration(jobDir, settings) {
   const child = spawn(claudeBin(), args, {
     cwd: jobDir,
     stdio: ["ignore", "pipe", log],
+    // Own process group: `launchctl kickstart -k` (every companion upgrade)
+    // SIGTERMs the whole group, which killed in-flight generations mid-edit
+    // — a half-revised page and no changes.json (2026-08-05). Detached, the
+    // run survives the restart and reconcileJobs re-adopts it by pid.
+    detached: true,
     env: { ...process.env, PATH: [process.env.PATH, path.join(os.homedir(), ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"].join(":") },
   });
 
@@ -262,35 +267,93 @@ function runGeneration(jobDir, settings) {
     }
   });
 
-  const fail = (msg) => {
-    fs.writeFileSync(path.join(jobDir, "error.txt"), msg);
-    writeState(jobDir, { phase: "error", error: msg, finishedAt: new Date().toISOString() });
-  };
-  child.on("error", (e) => fail("Could not launch claude CLI: " + e.message));
-  child.on("exit", (code) => {
-    const st = readState(jobDir) || {};
-    const edited = path.join(jobDir, "edited.html");
-    if (!fs.existsSync(edited)) {
-      fail(`claude exited ${code} without producing edited.html (see gen.log)`);
-      return;
+  // The child's pid is recorded so a daemon restart can re-adopt the run
+  // instead of leaving the job spinning forever (see reconcileJobs).
+  writeState(jobDir, { childPid: child.pid });
+
+  child.on("error", (e) => failJob(jobDir, "Could not launch claude CLI: " + e.message));
+  child.on("exit", (code) => finalizeJob(jobDir, code, ctr.resultText));
+}
+
+function failJob(jobDir, msg) {
+  fs.writeFileSync(path.join(jobDir, "error.txt"), msg);
+  writeState(jobDir, { phase: "error", error: msg, childPid: undefined, finishedAt: new Date().toISOString() });
+}
+
+// Decide a finished run's outcome. Shared by the live exit handler and by
+// reconcileJobs, so an adopted (post-restart) job ends exactly like a
+// normally-supervised one.
+function finalizeJob(jobDir, code, resultText) {
+  const st = readState(jobDir) || {};
+  const edited = path.join(jobDir, "edited.html");
+  const how = code == null ? "ended" : `exited ${code}`;
+  if (!fs.existsSync(edited)) {
+    failJob(jobDir, `claude ${how} without producing edited.html (see gen.log)`);
+    return;
+  }
+  // HTML jobs start from a pre-copied edited.html — "exists" proves
+  // nothing. Done means the file actually changed from its base hash.
+  if (st.baseHash && fileHash(edited) === st.baseHash) {
+    failJob(jobDir, `claude ${how} without changing the page (see gen.log)`);
+    return;
+  }
+  writeState(jobDir, { phase: "done", childPid: undefined, finishedAt: new Date().toISOString() });
+  // Round memory: the next fig on this result reads diagnosis.md into its
+  // prompt, so root causes travel forward instead of being re-derived.
+  if (resultText) {
+    try { fs.writeFileSync(path.join(jobDir, "diagnosis.md"), resultText); } catch { /* best-effort */ }
+  }
+  if (fs.existsSync(path.join(jobDir, "source.pdf"))) printPdf(jobDir);
+  const settingsNow = loadSettings();
+  if (settingsNow.target === "vercel") deployToVercel(jobDir, settingsNow); // legacy edits-project mode
+  else if (settingsNow.target === "linked") publishToLinked(jobDir);
+}
+
+const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+
+// A daemon restart (an upgrade, a crash, launchd) used to strand every
+// in-flight job: the spawned claude keeps running as an orphan, but the
+// exit handler that would mark the job done died with the old process, so
+// the status page spun forever with no Retry (2026-08-05, during an
+// upgrade). At startup, re-adopt what is still running and finalize what
+// is not. A job's last stream text is gone with the old process, so an
+// adopted run simply gets no diagnosis.md — the page and changelog are
+// unaffected.
+function reconcileJobs() {
+  let dirs = [];
+  try { dirs = fs.readdirSync(JOBS); } catch { return; }
+  for (const slug of dirs) {
+    const jobDir = path.join(JOBS, slug);
+    const st = readState(jobDir);
+    if (!st || st.phase !== "generating") continue;
+    const watch = () => {
+      const iv = setInterval(() => {
+        const cur = readState(jobDir);
+        if (!cur || cur.phase !== "generating") { clearInterval(iv); return; } // finished elsewhere
+        if (st.childPid && alive(st.childPid)) return;
+        if (!st.childPid && Date.now() - newestMtime(jobDir) < 10 * 60 * 1000) return; // still writing
+        clearInterval(iv);
+        finalizeJob(jobDir, null, null);
+      }, 5000);
+      iv.unref && iv.unref();
+    };
+    if (st.childPid && !alive(st.childPid)) { finalizeJob(jobDir, null, null); continue; }
+    // Either the pid is alive, or this predates childPid — in both cases the
+    // run may still be going, so watch instead of guessing.
+    watch();
+  }
+}
+
+// Newest mtime anywhere in a job dir: the liveness signal for a pre-childPid
+// job (a running generation keeps touching edited.html, gen.log, renders).
+function newestMtime(dir) {
+  let newest = 0;
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      try { newest = Math.max(newest, fs.statSync(path.join(dir, f)).mtimeMs); } catch { /* vanished */ }
     }
-    // HTML jobs start from a pre-copied edited.html — "exists" proves
-    // nothing. Done means the file actually changed from its base hash.
-    if (st.baseHash && fileHash(edited) === st.baseHash) {
-      fail(`claude exited ${code} without changing the page (see gen.log)`);
-      return;
-    }
-    writeState(jobDir, { phase: "done", finishedAt: new Date().toISOString() });
-    // Round memory: the next fig on this result reads diagnosis.md into its
-    // prompt, so root causes travel forward instead of being re-derived.
-    if (ctr.resultText) {
-      try { fs.writeFileSync(path.join(jobDir, "diagnosis.md"), ctr.resultText); } catch { /* best-effort */ }
-    }
-    if (fs.existsSync(path.join(jobDir, "source.pdf"))) printPdf(jobDir);
-    const settingsNow = loadSettings();
-    if (settingsNow.target === "vercel") deployToVercel(jobDir, settingsNow); // legacy edits-project mode
-    else if (settingsNow.target === "linked") publishToLinked(jobDir);
-  });
+  } catch { /* gone */ }
+  return newest;
 }
 
 // One stream event -> one short plain-English line, or null to keep the last.
@@ -934,8 +997,45 @@ async function handle(req, res) {
     return;
   }
 
+  // Publish an already-finished job to the review site on demand. Generation
+  // publishes automatically when the target says so; this is the manual verb
+  // for "deploy the page I'm looking at" and for re-running a publish that
+  // failed (Brady 2026-08-05: "how do I get the site deployed to vercel?").
+  // Body: {slug} — omitted means the newest finished job.
+  if (req.method === "POST" && url.pathname === "/publish") {
+    if (req.headers["x-fig-token"] !== settings.token) {
+      res.writeHead(403, { "Content-Type": "application/json", ...corsHeaders(req) });
+      res.end(JSON.stringify({ error: "bad token" }));
+      return;
+    }
+    let want = null;
+    try { want = JSON.parse(await readBody(req, 4096)).slug || null; } catch { /* newest */ }
+    const done = jobsList().filter((j) => j.phase === "done");
+    const job = want ? done.find((j) => j.slug === want) : done[0];
+    const reply = (code, body) => {
+      res.writeHead(code, { "Content-Type": "application/json", ...corsHeaders(req) });
+      res.end(JSON.stringify(body));
+    };
+    if (!job) return reply(404, { error: want ? "no finished job by that name" : "no finished figs yet" });
+    if (settings.target === "localhost") return reply(409, { error: "publishing is off — turn on Publish for team review first" });
+    const jobDir = path.join(JOBS, job.slug);
+    fs.writeFileSync(path.join(jobDir, "deploy.txt"), "Publishing…");
+    if (settings.target === "vercel") deployToVercel(jobDir, settings);
+    else publishToLinked(jobDir);
+    return reply(200, { publishing: job.slug, title: job.title });
+  }
+
+  // Publish result for one job (the popover polls this after Publish).
+  let m = url.pathname.match(/^\/jobs\/([a-z0-9-]+)\/deploy$/);
+  if (m) {
+    const dp = path.join(JOBS, m[1], "deploy.txt");
+    res.writeHead(200, { "Content-Type": "application/json", ...corsHeaders(req) });
+    res.end(JSON.stringify({ deploy: fs.existsSync(dp) ? fs.readFileSync(dp, "utf8").trim() : null }));
+    return;
+  }
+
   // Retry a failed job in place (button on the error page, token-gated).
-  let m = url.pathname.match(/^\/jobs\/([a-z0-9-]+)\/retry$/);
+  m = url.pathname.match(/^\/jobs\/([a-z0-9-]+)\/retry$/);
   if (m && req.method === "POST") {
     const jobDir = path.join(JOBS, m[1]);
     if (!fs.existsSync(jobDir)) { res.writeHead(404); res.end("no such job"); return; }
@@ -1129,6 +1229,7 @@ function prewarmClis() {
 
 server.listen(PORT, "127.0.0.1", () => {
   prewarmClis();
+  reconcileJobs();
   const settings = loadSettings();
   console.log(`figd listening on http://127.0.0.1:${PORT}`);
   console.log("extension token: in ~/.fig/settings.json (never logged) — paste it into the Fig popup once");

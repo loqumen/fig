@@ -115,14 +115,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // Settings ops from the overlay's gear popover -> native host (fs access).
-  if (msg && ["fig-settings-get", "fig-settings-set", "fig-link-start"].includes(msg.type)) {
+  // Settings + publish ops from the overlay -> native host. Everything goes
+  // through the host: Brave blocks the extension's own localhost fetch.
+  if (msg && ["fig-settings-get", "fig-settings-set", "fig-link-start", "fig-publish", "fig-deploy-status"].includes(msg.type)) {
     (async () => {
-      const map = { "fig-settings-get": "settings-get", "fig-settings-set": "settings-set", "fig-link-start": "link-start" };
+      const map = {
+        "fig-settings-get": "settings-get", "fig-settings-set": "settings-set",
+        "fig-link-start": "link-start", "fig-publish": "publish", "fig-deploy-status": "deploy-status",
+      };
       const out = await new Promise((resolve) => {
         try {
           chrome.runtime.sendNativeMessage(FIG_HOST,
-            { type: map[msg.type], settings: msg.settings, provider: msg.provider },
+            { type: map[msg.type], settings: msg.settings, provider: msg.provider, slug: msg.slug },
             (resp) => resolve(chrome.runtime.lastError || !resp ? { ok: false, error: "companion not reachable" } : resp));
         } catch { resolve({ ok: false, error: "companion not reachable" }); }
       });

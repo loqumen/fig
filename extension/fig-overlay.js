@@ -12,7 +12,7 @@
   // guard would keep running stale code forever. On a version mismatch,
   // tear the old overlay down (its toggle detaches its own listeners) and
   // let this file rebuild fresh.
-  const FIG_VERSION = 17;
+  const FIG_VERSION = 18;
   if (window.__figToggle && window.__figVersion !== FIG_VERSION) {
     if (document.querySelector(".fig-toolbar")) { try { window.__figToggle(); } catch { /* stale */ } }
     window.__figToggle = null;
@@ -1016,6 +1016,16 @@
     if (state.ui.gearBtn) state.ui.gearBtn.classList.remove("fig-active");
   };
 
+  // When Fig is open ON a fig result page, "Publish this page" means THAT
+  // fig. figd serves results at /pages/<slug>/; a published review site
+  // serves them at /<slug>/.
+  const currentFigSlug = () => {
+    const m = location.href.match(/\/pages\/([a-z0-9-]+)\/?(?:[?#]|$)/)
+      || (/^https?:\/\/[^/]*(vercel\.app|workers\.dev|pages\.dev)/.test(location.href)
+        ? location.href.match(/\/([a-z0-9-]+-\d{10,})\/?(?:[?#]|$)/) : null);
+    return m ? m[1] : null;
+  };
+
   const sendBg = (msg) => new Promise((resolve) => {
     try { chrome.runtime.sendMessage(msg, (r) => resolve(r || { ok: false })); }
     catch { resolve({ ok: false }); }
@@ -1040,27 +1050,45 @@
       const target = (data && data.target) || "localhost";
       const legacy = !!(data && data.legacyVercel);
       const canPublish = linked || legacy;
-      const publishing = target !== "localhost" && canPublish;
-      // Which destination the "Review site" radios preselect: the active
-      // target when publishing; otherwise the linked site, else legacy.
+      const publishOn = target !== "localhost" && canPublish;
       const dest = target === "vercel" ? "vercel" : target === "linked" ? "linked" : (linked ? "linked" : "vercel");
+      const siteName = linked
+        ? (data.publish.provider === "cloudflare" ? "Cloudflare" : "Vercel") + " — " + (data.publish.url || "").replace("https://", "")
+        : "";
+      // A toggle for the on/off decision, a dropdown when there is genuinely
+      // a choice, and the linking flow tucked behind a text link — it is
+      // optional, so it must not read as a required step (Brady 2026-08-05:
+      // "these settings are a bit wack… presented like a mandatory thing").
+      const opts = [];
+      if (linked) opts.push(["linked", siteName]);
+      if (legacy) opts.push(["vercel", "Legacy Vercel project"]);
+      const toggle = (name, on, label, desc, disabled) =>
+        '<label class="fig-toggle' + (disabled ? " fig-dim" : "") + '">' +
+        '<input type="checkbox" name="' + name + '"' + (on ? " checked" : "") + (disabled ? " disabled" : "") + '>' +
+        '<span class="fig-toggle-track"><span class="fig-toggle-knob"></span></span>' +
+        '<span class="fig-toggle-text"><span class="fig-toggle-name">' + label + '</span><em>' + desc + '</em></span></label>';
+
       pop.innerHTML =
         '<h3>Fig settings</h3>' +
-        '<div class="fig-set-label">Where results open</div>' +
-        '<label><input type="radio" name="fig-target" value="localhost"' + (publishing ? "" : " checked") + '><span>This computer only<em>Revised pages stay on this machine. Nothing is published.</em></span></label>' +
-        '<label' + (canPublish ? "" : ' class="fig-dim"') + '><input type="radio" name="fig-target" value="publish"' + (publishing ? " checked" : "") + (canPublish ? "" : " disabled") + '><span>Also publish for team review<em>' +
-        (canPublish ? "Deploys each result to the review site chosen below." : "Link a review site below to enable.") + '</em></span></label>' +
-        (canPublish
-          ? '<div class="fig-set-label">Review site</div>' +
-            (linked ? '<label><input type="radio" name="fig-dest" value="linked"' + (dest === "linked" ? " checked" : "") + '><span>' + (data.publish.provider === "cloudflare" ? "Cloudflare" : "Vercel") + ' — ' + (data.publish.url || "").replace("https://", "") + '<em>Your linked review site.</em></span></label>' : "") +
-            (legacy ? '<label><input type="radio" name="fig-dest" value="vercel"' + (dest === "vercel" ? " checked" : "") + '><span>Legacy Vercel project<em>The original edits project, deployed with the Vercel CLI.</em></span></label>' : "")
-          : "") +
-        '<div class="fig-set-label">' + (linked ? "Switch to a different review site" : "Link a review site") + '</div>' +
+        '<div class="fig-set-label">Publishing</div>' +
+        toggle("fig-publish-on", publishOn, "Publish for team review",
+          canPublish ? "Each new fig deploys to your review site. Off keeps everything on this machine."
+                     : "Link a review site to turn this on.", !canPublish) +
+        (canPublish && opts.length > 1
+          ? '<div class="fig-set-picker"><span>Review site</span><select name="fig-dest">' +
+            opts.map(function (o) { return '<option value="' + o[0] + '"' + (dest === o[0] ? " selected" : "") + '>' + o[1] + '</option>'; }).join("") +
+            '</select></div>'
+          : canPublish ? '<div class="fig-set-hint">Review site: ' + (opts[0] ? opts[0][1] : "") + '</div>' : "") +
+        (canPublish ? '<button class="fig-set-publish" type="button">' + (currentFigSlug() ? "Publish this page now" : "Publish the latest fig now") + '</button>' +
+          '<div class="fig-set-hint fig-set-pubnote">Deploys the finished page to your review site right now.</div>' : "") +
         (linking
           ? '<div class="fig-set-note">Linking… ' + ((data.publish && data.publish.step) || "") + '<br><em>A browser sign-in window may open.</em></div>'
-          : '<label><input type="radio" name="fig-provider" value="cloudflare" checked><span>Cloudflare<em>Recommended — free tier allows commercial use, unlimited page views.</em></span></label>' +
-            '<label><input type="radio" name="fig-provider" value="vercel"><span>Vercel<em>Free Hobby tier is for personal, non-commercial use; work use needs a paid Vercel plan.</em></span></label>' +
-            '<button class="fig-set-link" type="button">' + (linked ? "Link new site" : "Link review site") + '</button>') +
+          : '<button class="fig-set-more" type="button">' + (linked ? "Use a different review site" : "Link a review site") + '</button>' +
+            '<div class="fig-set-linkbox" hidden>' +
+            '<div class="fig-set-picker"><span>Provider</span><select name="fig-provider">' +
+            '<option value="cloudflare">Cloudflare</option><option value="vercel">Vercel</option></select></div>' +
+            '<div class="fig-set-hint">Cloudflare’s free tier allows commercial use. Vercel’s free Hobby tier is personal-use only.</div>' +
+            '<button class="fig-set-link" type="button">Link site</button></div>') +
         (err ? '<div class="fig-set-err">Link failed: ' + err + '</div>' : "") +
         '<div class="fig-set-label">Generation</div>' +
         '<div class="fig-set-picker"><span>Model</span><select name="fig-model">' +
@@ -1075,11 +1103,50 @@
         '<div class="fig-set-row"><span class="fig-set-saved">' + (note || "") + '</span>' +
         '<button class="fig-set-save" type="button">Save</button></div>';
 
+      const more = pop.querySelector(".fig-set-more");
+      if (more) more.addEventListener("click", () => {
+        const box = pop.querySelector(".fig-set-linkbox");
+        box.hidden = !box.hidden;
+        more.classList.toggle("fig-active", !box.hidden);
+      });
+
+      const pubBtn = pop.querySelector(".fig-set-publish");
+      if (pubBtn) pubBtn.addEventListener("click", async () => {
+        const noteEl = pop.querySelector(".fig-set-pubnote");
+        pubBtn.disabled = true;
+        pubBtn.textContent = "Publishing…";
+        const slug = currentFigSlug();
+        const r = await sendBg({ type: "fig-publish", slug });
+        if (!r.ok) {
+          pubBtn.disabled = false;
+          pubBtn.textContent = "Publish now";
+          if (noteEl) noteEl.textContent = (r.data && r.data.error) || r.error || "Could not publish";
+          return;
+        }
+        const which = r.data.publishing;
+        if (noteEl) noteEl.textContent = "Publishing “" + (r.data.title || which) + "”…";
+        // Deploys take a while (a CLI upload); poll until the daemon writes
+        // the outcome rather than leaving the button lying about success.
+        let tries = 0;
+        const poll = setInterval(async () => {
+          if (!state.ui.settingsPop || ++tries > 90) { clearInterval(poll); return; }
+          const d = await sendBg({ type: "fig-deploy-status", slug: which });
+          const line = d.ok && d.data && d.data.deploy;
+          if (!line || /^Publishing/.test(line)) return;
+          clearInterval(poll);
+          if (noteEl) noteEl.textContent = line;
+          pubBtn.disabled = false;
+          pubBtn.textContent = "Publish again";
+          const url = (line.match(/https?:\/\/\S+/) || [])[0];
+          if (url) toast("Published: " + url, true);
+        }, 2000);
+      });
+
       pop.querySelector(".fig-set-save").addEventListener("click", async () => {
-        const t = pop.querySelector('input[name="fig-target"]:checked');
+        const on = pop.querySelector('input[name="fig-publish-on"]');
         let newTarget = "localhost";
-        if (t && t.value === "publish") {
-          const d = pop.querySelector('input[name="fig-dest"]:checked');
+        if (on && on.checked) {
+          const d = pop.querySelector('select[name="fig-dest"]');
           newTarget = d ? d.value : (linked ? "linked" : "vercel");
         }
         const mSel = pop.querySelector('select[name="fig-model"]');
@@ -1094,7 +1161,7 @@
       });
       const linkBtn = pop.querySelector(".fig-set-link");
       if (linkBtn) linkBtn.addEventListener("click", async () => {
-        const prov = pop.querySelector('input[name="fig-provider"]:checked');
+        const prov = pop.querySelector('select[name="fig-provider"]');
         await sendBg({ type: "fig-link-start", provider: prov ? prov.value : "cloudflare" });
         if (!polling) polling = setInterval(async () => {
           if (!state.ui.settingsPop) { clearInterval(polling); return; }
