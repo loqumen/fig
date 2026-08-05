@@ -364,6 +364,16 @@ D=$(curl -s "http://127.0.0.1:$PORT/jobs/$SLUG/deploy")
 echo "$D" | grep -qi "deploy" && ok "deploy status endpoint answers" || bad "no deploy status ($D)"
 C=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$PORT/publish" -H "X-Fig-Token: testtoken123" -H "Content-Type: application/json" -d '{"slug":"no-such-job-0000"}')
 check "publish of an unknown job → 404" "$C" "404"
+# The deploy line must name the URL the CLI actually produced (the stable
+# alias), never the single-deployment URL stored at link time — that one 404s
+# for every later publish (2026-08-05).
+node -e '
+const out = "Production: https://fig-review-a4djyni7b-btin-devs-projects.vercel.app\nAliased: https://fig-review.vercel.app";
+const hosts = [...new Set(out.match(/https:\/\/[a-z0-9.-]+\.(?:vercel\.app|workers\.dev|pages\.dev)/gi) || [])];
+hosts.sort((a, b) => a.length - b.length);
+process.exit(hosts[0] === "https://fig-review.vercel.app" ? 0 : 1);
+' && ok "publish picks the stable alias over the per-deployment URL" || bad "alias picker wrong"
+grep -q "verifyPublished" "$FIGD" && ok "publish verifies the URL before claiming success" || bad "publish still claims success unverified"
 
 echo "== T12 settings page removed (gear popover owns settings) =="
 C=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/settings")

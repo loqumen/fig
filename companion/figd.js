@@ -429,6 +429,19 @@ function publishState() {
   try { return JSON.parse(fs.readFileSync(PUBLISH_STATE, "utf8")); } catch { return null; }
 }
 
+// "Published" is a claim about a URL, so check it before writing it. A fresh
+// deploy can need a moment to answer, hence the retries.
+function verifyPublished(url, done, tries) {
+  const left = tries == null ? 6 : tries;
+  const req = require("https").request(url, { method: "GET" }, (res) => {
+    res.resume();
+    if (res.statusCode === 200 || left <= 0) return done(res.statusCode);
+    setTimeout(() => verifyPublished(url, done, left - 1), 3000);
+  });
+  req.on("error", () => (left <= 0 ? done(0) : setTimeout(() => verifyPublished(url, done, left - 1), 3000)));
+  req.end();
+}
+
 // Publish a finished job to the user's LINKED review site (BYO hosting:
 // their own Cloudflare or Vercel account, scaffolded by fig-link.js).
 function publishToLinked(jobDir) {
@@ -447,13 +460,33 @@ function publishToLinked(jobDir) {
     // launchd's bare PATH has no user bin dirs — without this, npx is
     // ENOENT and every publish fails (seen live 2026-08-04).
     const env = { ...process.env, PATH: [process.env.PATH, path.join(os.homedir(), ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"].join(":") };
-    execFile("npx", args, { cwd: ps.dir, env }, (err, stdout) => {
-      const url = ps.url ? `${ps.url.replace(/\/$/, "")}/${slug}/` : "";
-      fs.writeFileSync(
-        path.join(jobDir, "deploy.txt"),
-        err ? "Publish failed: " + String(err.message).slice(0, 300)
-            : `Published: ${url} \u00b7 team review comments enabled`
-      );
+    execFile("npx", args, { cwd: ps.dir, env }, (err, stdout, stderr) => {
+      if (err) {
+        fs.writeFileSync(path.join(jobDir, "deploy.txt"), "Publish failed: " + String(err.message).slice(0, 300));
+        return;
+      }
+      // Report the URL the deploy ACTUALLY produced, never the one stored at
+      // link time: Vercel's link-time URL is a single-deployment URL, so it
+      // 404s for every later publish. Prefer the stable production alias the
+      // CLI prints (the shortest host it names), fall back to the stored one,
+      // then VERIFY before claiming success (2026-08-05: "Published: <url>"
+      // was written for a URL that 404'd).
+      const out = String(stdout || "") + String(stderr || "");
+      const hosts = [...new Set(out.match(/https:\/\/[a-z0-9.-]+\.(?:vercel\.app|workers\.dev|pages\.dev)/gi) || [])];
+      hosts.sort((a, b) => a.length - b.length); // the alias is shorter than a per-deployment URL
+      const base = hosts[0] || (ps.url || "").replace(/\/$/, "");
+      if (base && base !== (ps.url || "").replace(/\/$/, "")) {
+        try { fs.writeFileSync(PUBLISH_STATE, JSON.stringify({ ...ps, url: base }, null, 2)); } catch { /* keep going */ }
+      }
+      const url = base ? `${base}/${slug}/` : "";
+      if (!url) { fs.writeFileSync(path.join(jobDir, "deploy.txt"), "Published, but the CLI named no URL"); return; }
+      verifyPublished(url, (code) => {
+        fs.writeFileSync(
+          path.join(jobDir, "deploy.txt"),
+          code === 200 ? `Published: ${url} \u00b7 team review comments enabled`
+            : `Deployed, but ${url} answered ${code === 0 ? "no response" : code} \u2014 the site may still be propagating`
+        );
+      });
     });
   } catch (e) {
     fs.writeFileSync(path.join(jobDir, "deploy.txt"), "Publish failed: " + e.message);
