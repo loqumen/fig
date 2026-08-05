@@ -315,7 +315,7 @@ echo "$IDX" | grep -q 'title="'$SLUG'"' && ok "slug demoted to hover title" || b
 echo "== T12 settings page removed (gear popover owns settings) =="
 C=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/settings")
 check "GET /settings → 404" "$C" "404"
-node "$(cd "$(dirname "$0")" && pwd)/host-settings.mjs" "$T/home" && { pass=$((pass+7)); } || { fail=$((fail+1)); echo "  ✗ host settings suite"; }
+node "$(cd "$(dirname "$0")" && pwd)/host-settings.mjs" "$T/home" "$PORT" && { pass=$((pass+8)); } || { fail=$((fail+1)); echo "  ✗ host settings suite"; }
 
 kill $FIGD_PID 2>/dev/null
 echo

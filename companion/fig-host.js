@@ -12,7 +12,7 @@ const path = require("path");
 const http = require("http");
 
 const SETTINGS = path.join(os.homedir(), ".fig", "settings.json");
-const PORT = 41414;
+const PORT = Number(process.env.FIG_PORT) || 41414; // env override is for tests only
 
 function send(obj) {
   const buf = Buffer.from(JSON.stringify(obj), "utf8");
@@ -82,6 +82,29 @@ function settingsSet(patch) {
   return settingsGet();
 }
 
+// The "All figs" list. Fetched here in Node rather than by the extension's
+// own fetch(): Brave gates extension access to localhost, so a browser-side
+// fetch to 127.0.0.1 can be blocked outright ("companion not reachable" with
+// a perfectly healthy daemon, 2026-08-05). The native host has no such
+// restriction, and this reuses figd's jobsList() instead of duplicating it.
+function jobs() {
+  return new Promise((resolve) => {
+    const req = http.request(
+      { host: "127.0.0.1", port: PORT, path: "/jobs.json", method: "GET" },
+      (res) => {
+        let out = "";
+        res.on("data", (c) => (out += c));
+        res.on("end", () => {
+          try { resolve({ ok: true, data: JSON.parse(out) }); }
+          catch { resolve({ ok: false, data: { error: "bad response from companion" } }); }
+        });
+      }
+    );
+    req.on("error", (e) => resolve({ ok: false, data: { error: "companion not running (" + e.code + ")" } }));
+    req.end();
+  });
+}
+
 function linkStart(provider) {
   // Spawning from THIS process would inherit Chrome's provenance context —
   // macOS then quarantines everything npx downloads and Gatekeeper blocks
@@ -99,8 +122,18 @@ function linkStart(provider) {
   });
 }
 
-// stdin framing
+// stdin framing. Async ops (dispatch, jobs, link-start) are counted so a
+// stdin close mid-flight cannot drop the reply: Chrome holds the port open
+// for the port's lifetime, but anything else that pipes one message in and
+// closes (a test, a script) would otherwise get silence.
 let buf = Buffer.alloc(0);
+let pending = 0, ended = false;
+const maybeExit = () => { if (ended && pending === 0) process.exit(0); };
+const answer = async (fn) => {
+  pending += 1;
+  try { send(await fn()); } finally { pending -= 1; maybeExit(); }
+};
+
 process.stdin.on("data", async (chunk) => {
   buf = Buffer.concat([buf, chunk]);
   while (buf.length >= 4) {
@@ -111,8 +144,9 @@ process.stdin.on("data", async (chunk) => {
     if (msg && msg.type === "ping") { send({ ok: true, data: { pong: true } }); continue; }
     if (msg && msg.type === "settings-get") { send(settingsGet()); continue; }
     if (msg && msg.type === "settings-set") { send(settingsSet(msg.settings || {})); continue; }
-    if (msg && msg.type === "link-start") { send(await linkStart(msg.provider)); continue; }
-    send(await dispatch(msg && msg.payload ? msg.payload : msg));
+    if (msg && msg.type === "jobs") { answer(() => jobs()); continue; }
+    if (msg && msg.type === "link-start") { answer(() => linkStart(msg.provider)); continue; }
+    answer(() => dispatch(msg && msg.payload ? msg.payload : msg));
   }
 });
-process.stdin.on("end", () => process.exit(0));
+process.stdin.on("end", () => { ended = true; maybeExit(); });

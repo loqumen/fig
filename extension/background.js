@@ -90,9 +90,21 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
-  // "All figs" popover: human-readable job inventory from the daemon.
+  // "All figs" popover: human-readable job inventory. Native host FIRST —
+  // Brave gates extension access to localhost, so the browser-side fetch
+  // below can be blocked outright even with a healthy daemon (2026-08-05).
+  // The HTTP path stays as the fallback for installs without the host.
   if (msg && msg.type === "fig-jobs") {
     (async () => {
+      const native = await new Promise((resolve) => {
+        try {
+          chrome.runtime.sendNativeMessage(FIG_HOST, { type: "jobs" }, (resp) => {
+            if (chrome.runtime.lastError || !resp || !resp.ok || !Array.isArray(resp.data)) return resolve(null);
+            resolve(resp);
+          });
+        } catch { resolve(null); }
+      });
+      if (native) { sendResponse(native); return; }
       try {
         const r = await fetch("http://127.0.0.1:41414/jobs.json");
         sendResponse({ ok: r.ok, data: await r.json() });
