@@ -422,6 +422,28 @@ function printPdf(jobDir) {
 // that each carry failure history live THERE, not re-implemented here).
 // data-fig-version is the job slug, so comments persist across redeploys.
 const { injectOverlay } = require("./inject-overlay.js");
+const { inlineAssets } = require("./inline-assets.js");
+
+// A page is published FOR OTHER PEOPLE, so it must not depend on this
+// machine: fig keeps assets by reference (<base> + relative src), which
+// silently ships a page whose every image points at the capturing machine's
+// dev server. Inline them before deploying, and say what could not be got.
+function selfContained(jobDir, html, done) {
+  let base = null;
+  try { base = JSON.parse(fs.readFileSync(path.join(jobDir, "annotations.json"), "utf8")).url || null; } catch { /* none */ }
+  const m = html.match(/<base\b[^>]*\bhref\s*=\s*["']([^"']+)["']/i);
+  if (m) base = m[1];
+  if (!base) return done(html, "");
+  inlineAssets(html, base, (r) => {
+    const note = r.inlined || r.failed
+      ? ` · ${r.inlined} asset${r.inlined === 1 ? "" : "s"} embedded` + (r.failed ? `, ${r.failed} unreachable` : "")
+      : "";
+    if (r.failed) {
+      try { fs.writeFileSync(path.join(jobDir, "assets.txt"), r.notes.join("\n")); } catch { /* best-effort */ }
+    }
+    done(r.html, note);
+  });
+}
 const PUBLISH_STATE = path.join(FIG_HOME, "publish.json");
 const PIN = { cloudflare: "wrangler@4.112.0", vercel: "vercel@56.3.2" };
 
@@ -449,11 +471,21 @@ function publishToLinked(jobDir) {
   if (!ps || ps.status !== "linked" || !ps.dir) return;
   try {
     const slug = path.basename(jobDir);
-    let html = injectFavicon(injectChangelog(jobDir, fs.readFileSync(path.join(jobDir, "edited.html"), "utf8")));
-    html = injectOverlay(html, { version: slug, clearMine: true });
-    const dest = path.join(ps.dir, "public", slug);
-    fs.mkdirSync(dest, { recursive: true });
-    fs.writeFileSync(path.join(dest, "index.html"), html);
+    const raw = injectFavicon(injectChangelog(jobDir, fs.readFileSync(path.join(jobDir, "edited.html"), "utf8")));
+    selfContained(jobDir, raw, (embedded, assetNote) => {
+      const html = injectOverlay(embedded, { version: slug, clearMine: true });
+      const dest = path.join(ps.dir, "public", slug);
+      fs.mkdirSync(dest, { recursive: true });
+      fs.writeFileSync(path.join(dest, "index.html"), html);
+      deployLinked(ps, jobDir, slug, assetNote);
+    });
+  } catch (e) {
+    fs.writeFileSync(path.join(jobDir, "deploy.txt"), "Publish failed: " + e.message);
+  }
+}
+
+function deployLinked(ps, jobDir, slug, assetNote) {
+  try {
     const args = ps.provider === "cloudflare"
       ? ["--yes", PIN.cloudflare, "deploy"]
       : ["--yes", PIN.vercel, "deploy", "--prod", "--yes"];
@@ -483,7 +515,7 @@ function publishToLinked(jobDir) {
       verifyPublished(url, (code) => {
         fs.writeFileSync(
           path.join(jobDir, "deploy.txt"),
-          code === 200 ? `Published: ${url} \u00b7 team review comments enabled`
+          code === 200 ? `Published: ${url} \u00b7 team review comments enabled${assetNote || ""}`
             : `Deployed, but ${url} answered ${code === 0 ? "no response" : code} \u2014 the site may still be propagating`
         );
       });
@@ -499,7 +531,8 @@ const EDITS_DIR_DEFAULT = path.join(os.homedir(), "Desktop", "edits");
 function deployToVercel(jobDir, settings) {
   try {
     const slug = path.basename(jobDir);
-    const html = injectFavicon(injectChangelog(jobDir, fs.readFileSync(path.join(jobDir, "edited.html"), "utf8")));
+    const raw = injectFavicon(injectChangelog(jobDir, fs.readFileSync(path.join(jobDir, "edited.html"), "utf8")));
+    selfContained(jobDir, raw, (html) => {
     const src = path.join(jobDir, "deploy-src.html");
     fs.writeFileSync(src, html);
 
@@ -536,6 +569,7 @@ function deployToVercel(jobDir, settings) {
         return;
       }
       runVercel(" · team review comments enabled");
+    });
     });
   } catch (e) {
     fs.writeFileSync(path.join(jobDir, "deploy.txt"), "Deploy failed: " + e.message);

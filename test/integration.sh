@@ -374,6 +374,10 @@ hosts.sort((a, b) => a.length - b.length);
 process.exit(hosts[0] === "https://fig-review.vercel.app" ? 0 : 1);
 ' && ok "publish picks the stable alias over the per-deployment URL" || bad "alias picker wrong"
 grep -q "verifyPublished" "$FIGD" && ok "publish verifies the URL before claiming success" || bad "publish still claims success unverified"
+# A published page must not depend on the capturing machine: assets are
+# embedded and a localhost <base> is dropped (2026-08-05, designer saw 16
+# dead images on a preview captured from a dev server).
+node "$(cd "$(dirname "$0")" && pwd)/inline-assets.mjs" && pass=$((pass+4)) || { fail=$((fail+1)); echo "  ✗ asset inlining suite"; }
 
 echo "== T12 settings page removed (gear popover owns settings) =="
 C=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/settings")
