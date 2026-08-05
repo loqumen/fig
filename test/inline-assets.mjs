@@ -17,7 +17,9 @@ const ok = (m) => console.log("  ✓", m);
 
 srv.listen(48412, "127.0.0.1", () => {
   const base = "http://127.0.0.1:48412/v2/";
-  const html = '<html><head><base href="' + base + '">'
+  // Two <base> tags: a fig-on-fig capture carries the original page's and
+  // fig's own. BOTH must go, or leftovers re-point uninlined refs here.
+  const html = '<html><head><base href="' + base + '"><base>'
     + '<style>.x{background:url(../assets/b.svg)}</style></head><body>'
     + '<img src="../assets/a.png">'
     + '<img srcset="../assets/c.png 1x" src="../assets/c.png">'

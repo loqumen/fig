@@ -102,7 +102,10 @@ function inlineAssets(html, baseUrl, done) {
     // could not be inlined AND makes relative links dead for the reader.
     // Keep it only when it points somewhere publicly reachable.
     if (/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\]|0\.0\.0\.0)/i.test(baseUrl)) {
-      out = out.replace(/<base\b[^>]*>/i, "");
+      // Global: a fig-on-fig capture can carry more than one <base> (the
+      // original page's plus fig's own), and leaving any behind re-points
+      // whatever could not be inlined back at this machine.
+      out = out.replace(/<base\b[^>]*>/gi, "");
       notes.push("removed the localhost <base>");
     }
     done({ html: out, inlined, failed: refs.length - inlined, notes });
