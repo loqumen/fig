@@ -15,6 +15,8 @@
   window.__figTestMem = {};
   window.chrome = {
     runtime: {
+      id: "figtestextensionid", // a live context has one; clearing it simulates a reload
+      lastError: undefined,
       sendMessage: (msg, cb) => {
         if (!cb) return;
         if (msg && msg.type === "fig-jobs") {
@@ -217,6 +219,25 @@
     await sleep(2300); // the deploy poll
     ok("publish reports the deployed URL", /fig-review-test\.vercel\.app/.test(setPop.querySelector(".fig-set-pubnote").textContent));
     gearBtn.click();
+
+    // --- stale context must NOT be blamed on the companion ---------------
+    // Reloading the extension kills this page's runtime port; the overlay
+    // must say "reload the page", not "companion not reachable".
+    const realRuntimeId = window.chrome.runtime.id;
+    window.chrome.runtime.id = undefined; // exactly what an invalidated context looks like
+    figsBtn.click();
+    await sleep(100);
+    const staleTxt = (document.querySelector(".fig-figs-pop") || {}).textContent || "";
+    ok("stale context blames the page, not the companion",
+      /Reload this page/.test(staleTxt) && !/not reachable/.test(staleTxt));
+    figsBtn.click();
+    gearBtn.click();
+    await sleep(100);
+    const staleSet = (document.querySelector(".fig-settings-pop") || {}).textContent || "";
+    ok("settings shows the same honest stale message",
+      /Reload this page/.test(staleSet) && !/not reachable/.test(staleSet));
+    gearBtn.click();
+    window.chrome.runtime.id = realRuntimeId;
 
     // --- trash is the only real delete -----------------------------------
     clearBtn.click();

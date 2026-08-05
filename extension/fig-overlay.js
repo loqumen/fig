@@ -12,7 +12,7 @@
   // guard would keep running stale code forever. On a version mismatch,
   // tear the old overlay down (its toggle detaches its own listeners) and
   // let this file rebuild fresh.
-  const FIG_VERSION = 18;
+  const FIG_VERSION = 19;
   if (window.__figToggle && window.__figVersion !== FIG_VERSION) {
     if (document.querySelector(".fig-toolbar")) { try { window.__figToggle(); } catch { /* stale */ } }
     window.__figToggle = null;
@@ -1026,10 +1026,23 @@
     return m ? m[1] : null;
   };
 
+  // Reloading the extension leaves every ALREADY-OPEN page running the old
+  // content script, whose chrome.runtime port is dead. That is not the
+  // companion being down — reporting it as "Fig Companion is not reachable"
+  // sends the user hunting a healthy daemon (2026-08-05). `stale` says so,
+  // and the caller shows the action that actually fixes it.
   const sendBg = (msg) => new Promise((resolve) => {
-    try { chrome.runtime.sendMessage(msg, (r) => resolve(r || { ok: false })); }
-    catch { resolve({ ok: false }); }
+    if (!chrome.runtime || !chrome.runtime.id) { resolve({ ok: false, stale: true }); return; }
+    try {
+      chrome.runtime.sendMessage(msg, (r) => {
+        const e = chrome.runtime.lastError;
+        if (e) { resolve({ ok: false, stale: /context invalidated|Receiving end does not exist/i.test(e.message || ""), error: e.message }); return; }
+        resolve(r || { ok: false });
+      });
+    } catch (e) { resolve({ ok: false, stale: true, error: String(e && e.message || e) }); }
   });
+
+  const STALE_MSG = "Fig was updated. Reload this page (or press ⌥⇧F twice) to reconnect the tools.";
 
   const openSettings = async () => {
     closeNote(); closeDetail();
@@ -1176,7 +1189,9 @@
 
     const r = await sendBg({ type: "fig-settings-get" });
     if (!r.ok) {
-      pop.innerHTML = '<h3>Fig settings</h3><div class="fig-set-note">Fig Companion is not reachable. Open Fig Companion from Applications, then try again.</div>';
+      pop.innerHTML = '<h3>Fig settings</h3><div class="fig-set-note">' +
+        (r.stale ? STALE_MSG : "Fig Companion is not reachable. Open Fig Companion from Applications, then try again.") +
+        '</div>';
       return;
     }
     render(r.data);
@@ -1203,7 +1218,8 @@
     if (!state.ui.figsPop) return;
     const list = pop.querySelector(".fig-figs-list");
     if (!r.ok || !Array.isArray(r.data)) {
-      list.innerHTML = '<div class="fig-figs-empty">Fig Companion is not reachable — open Fig Companion from Applications.</div>';
+      list.replaceChildren(el("div", "fig-figs-empty",
+        r.stale ? STALE_MSG : "Fig Companion is not reachable — open Fig Companion from Applications."));
       return;
     }
     if (!r.data.length) {
