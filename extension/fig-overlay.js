@@ -12,13 +12,20 @@
   // guard would keep running stale code forever. On a version mismatch,
   // tear the old overlay down (its toggle detaches its own listeners) and
   // let this file rebuild fresh.
-  const FIG_VERSION = 19;
+  const FIG_VERSION = 20;
   if (window.__figToggle && window.__figVersion !== FIG_VERSION) {
     if (document.querySelector(".fig-toolbar")) { try { window.__figToggle(); } catch { /* stale */ } }
     window.__figToggle = null;
   }
   window.__figVersion = FIG_VERSION;
   if (window.__figToggle) { window.__figToggle(); return; }
+
+  // Frames. The overlay runs in EVERY frame of the tab so embedded content
+  // (a Claude artifact, any cross-origin iframe) can be annotated at all —
+  // clicks and text selections inside an iframe never reach the top
+  // document. Only the top frame draws the toolbar; child frames mirror its
+  // tool and hand their markings + document back at dispatch.
+  const IS_TOP = (() => { try { return window.top === window; } catch { return false; } })();
 
   const JEWELS = ["#1a1a1a", "#F76D18", "#2C9F28", "#8C89E7", "#2268FF"];
 
@@ -100,7 +107,9 @@
     if (!sticky) t.__hid = setTimeout(() => { t.style.display = "none"; }, 2800);
   };
 
-  const setMode = (mode) => {
+  // Applies a tool locally. The top frame also broadcasts it so every child
+  // frame arms the same tool (setMode is the user-facing entry point).
+  const applyMode = (mode) => {
     // Leaving a mode dismisses its floating editors: an unsaved comment box
     // (or highlight note — closeNote cancels the provisional highlight) must
     // not stay hovering after the tool is switched.
@@ -109,18 +118,31 @@
     closeSettings();
     if (state.ui.figsPop) { state.ui.figsPop.remove(); state.ui.figsPop = null; state.ui.figsBtn && state.ui.figsBtn.classList.remove("fig-active"); }
     if (state.ui.helpPop) { state.ui.helpPop.remove(); state.ui.helpPop = null; }
-    state.mode = state.mode === mode ? null : mode;
+    state.mode = mode;
     document.body.classList.toggle("fig-mode-comment", state.mode === "comment");
     document.body.classList.toggle("fig-mode-highlight", state.mode === "highlight");
     document.body.classList.toggle("fig-mode-draw", state.mode === "draw");
-    for (const [m, btn] of Object.entries(state.ui.modeButtons)) {
-      btn.classList.toggle("fig-active", state.mode === m);
+    if (state.ui.modeButtons) {
+      for (const [m, btn] of Object.entries(state.ui.modeButtons)) {
+        btn.classList.toggle("fig-active", state.mode === m);
+      }
     }
-    state.ui.drawColors.classList.toggle("fig-visible", state.mode === "draw");
+    if (state.ui.drawColors) state.ui.drawColors.classList.toggle("fig-visible", state.mode === "draw");
     if (state.mode !== "draw" && state.erasing) setErasing(false);
+    if (!IS_TOP) return; // the top frame owns the toasts
     if (state.mode === "highlight") toast("Select text to flag it");
     if (state.mode === "comment") toast("Click anywhere to drop a comment");
     if (state.mode === "draw") toast("Drag to draw. The eraser removes only what it touches.");
+  };
+
+  // Toolbar entry point: toggles the tool locally and arms every child frame
+  // with the same one, so a click inside an embedded artifact does what the
+  // toolbar says it will.
+  const setMode = (mode) => {
+    const next = state.mode === mode ? null : mode;
+    applyMode(next);
+    try { chrome.runtime.sendMessage({ type: "fig-mode", mode: next }, () => void chrome.runtime.lastError); }
+    catch { /* frames stay on their last mode */ }
   };
 
   const setErasing = (on) => {
@@ -939,17 +961,66 @@
       .catch(() => { clearTimeout(cap); finish(); });
   };
 
-  const dispatch = () => {
+  // Ask the worker for every child frame's markings + document. Returns []
+  // when nothing is embedded (the overwhelmingly common case).
+  const collectFrames = () => new Promise((resolve) => {
+    if (!IS_TOP) { resolve([]); return; }
+    try {
+      chrome.runtime.sendMessage({ type: "fig-collect" }, (r) => {
+        void chrome.runtime.lastError;
+        resolve(r && Array.isArray(r.frames) ? r.frames : []);
+      });
+    } catch { resolve([]); }
+  });
+
+  // The subject of a job is the frame the user actually marked up. On a
+  // shared Claude artifact the whole point is the iframe, not the host
+  // page's chrome, so the frame with the most markings wins (ties go to the
+  // top frame, which is the normal single-document case).
+  const chooseSubject = (frames) => {
+    let best = null;
+    for (const f of frames) {
+      const n = (f.annotations.comments || []).length + (f.annotations.highlights || []).length + (f.annotations.strokes || []).length;
+      if (n > (best ? best.n : 0)) best = { n, frame: f };
+    }
+    return best && best.n > markCount() ? best.frame : null;
+  };
+
+  const dispatch = async () => {
     if (state.ui.busy) return; // double-press = duplicate job
-    const total = state.comments.length + state.highlights.length + state.strokes.length;
+    const frames = await collectFrames();
+    const framesTotal = frames.reduce((n, f) =>
+      n + (f.annotations.comments || []).length + (f.annotations.highlights || []).length + (f.annotations.strokes || []).length, 0);
+    const total = markCount() + framesTotal;
     if (!total) { toast("Nothing annotated yet"); return; }
+    const subject = chooseSubject(frames);
     setBusy(true);
-    toast("Sending to Fig…", true);
+    toast(subject ? "Sending the embedded page to Fig…" : "Sending to Fig…", true);
     // Serializing a big page is sync work; yield a frame first so the toast
     // and the button's busy state actually paint before it starts.
     setTimeout(() => {
       const pdf = window.__figPDF || null;
-      const payload = {
+      const strip = (list) => list.map((s) => ({
+        box: s.box, color: s.color, nearPath: s.nearPath, nearText: s.nearText,
+        page: s.page, rx: s.rx, ry: s.ry,
+      }));
+      // When the markings live in an embedded frame (a shared Claude
+      // artifact), THAT document is the page to revise — its own URL, its
+      // own HTML, its own markings.
+      const payload = subject ? {
+        type: "html",
+        url: subject.url,
+        title: subject.title || document.title,
+        viewport: { w: window.innerWidth, h: window.innerHeight },
+        capturedAt: new Date().toISOString(),
+        html: subject.html,
+        embeddedIn: location.href,
+        annotations: {
+          comments: subject.annotations.comments || [],
+          highlights: subject.annotations.highlights || [],
+          strokes: strip(subject.annotations.strokes || []),
+        },
+      } : {
         type: pdf ? "pdf" : "html",
         url: pdf ? pdf.src : location.href,
         title: document.title,
@@ -960,10 +1031,7 @@
         annotations: {
           comments: state.comments,
           highlights: state.highlights,
-          strokes: state.strokes.map((s) => ({
-            box: s.box, color: s.color, nearPath: s.nearPath, nearText: s.nearText,
-            page: s.page, rx: s.rx, ry: s.ry,
-          })),
+          strokes: strip(state.strokes),
         },
       };
       withSource(payload, (p) => {
@@ -1429,7 +1497,25 @@
     try { chrome.storage.local.set({ [key]: data }); } catch { /* context gone; localStorage below still holds it */ }
     try { localStorage.setItem(key, JSON.stringify(data)); } catch { /* page forbids storage; chrome.storage holds it */ }
   };
-  const persist = () => { clearTimeout(persistTimer); persistTimer = setTimeout(persistNow, 250); };
+  const markCount = () => state.comments.length + state.highlights.length + state.strokes.length;
+
+  // A child frame tells the worker how many markings it holds, so dispatch
+  // in the top frame knows which frames to collect from.
+  const announceFrame = () => {
+    if (IS_TOP) return;
+    try {
+      chrome.runtime.sendMessage(
+        { type: "fig-frame-state", url: location.href, marks: markCount() },
+        () => void chrome.runtime.lastError
+      );
+    } catch { /* the top frame simply won't see this frame */ }
+  };
+
+  const persist = () => {
+    clearTimeout(persistTimer);
+    persistTimer = setTimeout(persistNow, 250);
+    announceFrame();
+  };
   // A refresh inside the debounce window must not eat the last mutation.
   window.addEventListener("pagehide", () => { if (persistTimer) persistNow(); });
 
@@ -1524,24 +1610,49 @@
     catch { apply(null); }
   };
 
+  // Child frames answer the worker: mirror the top frame's tool, and hand
+  // over their markings + document when a dispatch collects them.
+  const onWorkerMessage = (msg, sender, sendResponse) => {
+    if (!msg) return;
+    if (msg.type === "fig-set-mode" && !IS_TOP) {
+      if (state.on) applyMode(msg.mode || null);
+      sendResponse({ ok: true });
+      return;
+    }
+    if (msg.type === "fig-serialize" && !IS_TOP) {
+      sendResponse({
+        url: location.href,
+        title: document.title,
+        html: serializePage(),
+        annotations: { comments: state.comments, highlights: state.highlights, strokes: state.strokes },
+      });
+      return;
+    }
+  };
+
   const setup = () => {
     state.on = true;
     injectFont();
-    buildToolbar();
+    if (IS_TOP) buildToolbar(); // one toolbar per tab, in the host page
     buildPinLayer();
     initCanvas();
+    try { chrome.runtime.onMessage.addListener(onWorkerMessage); } catch { /* no worker; local-only */ }
     document.addEventListener("click", onPageClick, true);
     document.addEventListener("keydown", onKeydown, true);
     document.addEventListener("mousedown", onMouseDown, true);
     document.addEventListener("mousemove", onHlMouseMove, true);
     document.addEventListener("mouseup", onMouseUp, true);
-    const ver = (() => { try { return chrome.runtime.getManifest().version; } catch { return ""; } })();
-    toast("Fig " + ver + " on — Draw, Comment, or Suggest, then press Fig");
+    if (IS_TOP) {
+      const ver = (() => { try { return chrome.runtime.getManifest().version; } catch { return ""; } })();
+      toast("Fig " + ver + " on — Draw, Comment, or Suggest, then press Fig");
+    }
     restore();
+    announceFrame();
   };
 
   const teardown = () => {
     if (persistTimer) persistNow(); // flush before the state below is wiped
+    try { chrome.runtime.onMessage.removeListener(onWorkerMessage); } catch { /* never added */ }
     state.on = false;
     state.mode = null;
     document.body.classList.remove("fig-mode-comment", "fig-mode-highlight", "fig-mode-draw");
@@ -1563,6 +1674,7 @@
     state.erasing = false;
     document.body.classList.remove("fig-erasing");
     state.ui = {};
+    announceFrame(); // now zero markings: drop out of the collection registry
   };
 
   window.__figToggle = () => (state.on ? teardown() : setup());

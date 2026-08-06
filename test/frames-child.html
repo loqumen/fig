@@ -1,0 +1,17 @@
+<!doctype html>
+<!-- Stands in for embedded content (a shared Claude artifact). The overlay
+     runs here in CHILD mode: no toolbar, mirrors the parent's tool, hands
+     its markings + document back at dispatch. -->
+<html>
+<head><meta charset="utf-8"><title>Embedded Artifact</title></head>
+<body>
+<h1 id="ah">Artifact headline</h1>
+<p id="ap">Artifact body text that a reviewer might want to flag.</p>
+<script>
+  // The worker shim is installed by the parent before this frame loads its
+  // overlay copy (see frames-ui.html): messages route through the parent.
+  window.chrome = parent.__figMakeChromeShim(window, "child");
+</script>
+<script src="../extension/fig-overlay.js"></script>
+</body>
+</html>

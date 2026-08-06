@@ -1,0 +1,123 @@
+<!doctype html>
+<!-- Frames test: proves Fig can annotate content inside an iframe (a shared
+     Claude artifact) and that dispatch sends THAT document, not the host
+     page's chrome. A shim plays the service worker's routing role: mode
+     broadcast to children, and fig-collect fanning out to each child frame
+     by "frameId" (here, by window reference). -->
+<html>
+<head><meta charset="utf-8"><title>fig frames test</title></head>
+<body>
+<h1>Host page</h1>
+<p id="hostp">Host chrome that is NOT the thing under review.</p>
+<iframe id="art" src="frames-child.html" width="600" height="240" style="border:1px solid #ccc"></iframe>
+<pre id="results">RUNNING</pre>
+<script>
+  // ---- shared worker shim -------------------------------------------------
+  // Frames register here; the shim relays exactly like background.js does.
+  const FRAMES = [];           // {win, marks, url}
+  let dispatched = null;
+
+  window.__figMakeChromeShim = (win, role) => ({
+    runtime: {
+      id: "figtestextensionid",
+      lastError: undefined,
+      getURL: (p) => "../extension/" + p,
+      getManifest: () => ({ version: "frames-test" }),
+      onMessage: {
+        _ls: [],
+        addListener(fn) { this._ls.push(fn); win.__figListeners = this._ls; },
+        removeListener(fn) { this._ls = this._ls.filter((f) => f !== fn); win.__figListeners = this._ls; },
+      },
+      sendMessage: (msg, cb) => {
+        const reply = (r) => cb && cb(r);
+        if (msg.type === "fig-frame-state") {
+          const rec = FRAMES.find((f) => f.win === win);
+          if (rec) { rec.marks = msg.marks; rec.url = msg.url; }
+          else FRAMES.push({ win, marks: msg.marks, url: msg.url });
+          return reply({ ok: true });
+        }
+        if (msg.type === "fig-mode") {           // top -> every child
+          for (const f of FRAMES) {
+            if (f.win === win) continue;
+            for (const fn of (f.win.__figListeners || [])) fn({ type: "fig-set-mode", mode: msg.mode }, {}, () => {});
+          }
+          return reply({ ok: true });
+        }
+        if (msg.type === "fig-collect") {        // top -> each child, by frame
+          const frames = [];
+          for (const f of FRAMES) {
+            if (f.win === win || !f.marks) continue;
+            for (const fn of (f.win.__figListeners || [])) {
+              fn({ type: "fig-serialize" }, {}, (r) => { if (r && r.annotations) frames.push(r); });
+            }
+          }
+          return reply({ ok: true, frames });
+        }
+        if (msg.type === "fig-dispatch") { dispatched = msg.payload; return reply({ ok: true }); }
+        return reply({ ok: true });
+      },
+    },
+    storage: { local: { set: (o, cb) => cb && cb(), get: (k, cb) => cb({}), remove: (k, cb) => cb && cb() } },
+  });
+
+  window.chrome = window.__figMakeChromeShim(window, "top");
+  window.__figFrames = FRAMES;
+  window.__figGetDispatched = () => dispatched;
+</script>
+<script src="../extension/fig-overlay.js"></script>
+<script>
+(async () => {
+  const out = [];
+  const ok = (n, c) => out.push((c ? "PASS" : "FAIL") + " :: " + n);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const fire = (el, type, opts) =>
+    el.dispatchEvent(new MouseEvent(type, Object.assign({ bubbles: true, cancelable: true, view: el.ownerDocument.defaultView }, opts)));
+  const key = (el, k) =>
+    el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+
+  try {
+    await sleep(600); // let the iframe's overlay boot
+    const frame = document.getElementById("art").contentWindow;
+    const fdoc = frame.document;
+
+    ok("host page built the toolbar", !!document.querySelector(".fig-toolbar"));
+    ok("embedded frame did NOT build a toolbar", !fdoc.querySelector(".fig-toolbar"));
+    ok("embedded frame still built its annotation layer", !!fdoc.querySelector(".fig-pin-layer"));
+
+    // The toolbar's tool must arm the embedded frame too.
+    const btns = [...document.querySelectorAll(".fig-toolbar .fig-btn")];
+    btns[1].click(); // comment
+    await sleep(50);
+    ok("comment tool reaches the embedded frame", fdoc.body.classList.contains("fig-mode-comment"));
+
+    // Comment INSIDE the artifact.
+    const ap = fdoc.getElementById("ap");
+    fire(ap, "click", { clientX: 30, clientY: 30 });
+    const note = fdoc.querySelector(".fig-note textarea");
+    ok("clicking inside the artifact opens a note editor", !!note);
+    note.value = "tighten this artifact copy";
+    key(note, "Enter");
+    ok("pin dropped inside the artifact", !!fdoc.querySelector(".fig-pin"));
+    await sleep(400); // debounced announce
+
+    ok("frame announced its markings to the worker",
+      (window.__figFrames || []).some((f) => f.marks === 1 && /frames-child/.test(f.url || "")));
+
+    // Dispatch from the host toolbar: the ARTIFACT is the subject.
+    document.querySelector(".fig-toolbar .fig-go").click();
+    await sleep(300);
+    const p = window.__figGetDispatched();
+    ok("dispatch happened with only embedded markings", !!p);
+    ok("subject is the embedded document, not the host page", !!p && /frames-child\.html/.test(p.url) && !/frames-ui\.html$/.test(p.url));
+    ok("payload carries the artifact's own HTML", !!p && /Artifact headline/.test(p.html) && !/Host chrome that is NOT/.test(p.html));
+    ok("payload carries the marking made inside the artifact",
+      !!p && p.annotations.comments.length === 1 && /tighten this artifact copy/.test(p.annotations.comments[0].text));
+    ok("payload records where it was embedded", !!p && /frames-ui\.html/.test(p.embeddedIn || ""));
+  } catch (e) {
+    out.push("FAIL :: uncaught: " + (e && e.stack || e));
+  }
+  document.getElementById("results").textContent = out.join("\n");
+})();
+</script>
+</body>
+</html>

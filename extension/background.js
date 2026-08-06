@@ -56,11 +56,27 @@ async function toggleFig(tab) {
   // failing silently.
   if (tab.url && isPdfUrl(tab.url)) { await openPdfViewer(tab); return; }
   try {
-    await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["fig-overlay.css"] });
-    await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["fig-overlay.js"] });
+    // Inject into EVERY frame, not just the top one. A Claude artifact, a
+    // Figma embed, a docs preview — the thing worth annotating often lives
+    // in a cross-origin iframe, and a top-frame-only overlay can neither
+    // see its text nor receive its clicks (2026-08-05). Child frames run
+    // the same file in "child mode": no toolbar, they mirror the top
+    // frame's tool and hand their markings back at dispatch.
+    // Same-origin frames come with activeTab; cross-origin ones need the
+    // optional <all_urls> grant (the popup's embedded-content toggle).
+    await chrome.scripting.insertCSS({ target: { tabId: tab.id, allFrames: true }, files: ["fig-overlay.css"] });
+    await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ["fig-overlay.js"] });
     // fig-overlay.js defines window.__figToggle and calls it on (re)injection.
     chrome.action.setBadgeText({ tabId: tab.id, text: "" });
   } catch (e) {
+    // allFrames can fail wholesale on some pages; the top frame alone is
+    // still worth having, so fall back before reporting failure.
+    try {
+      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["fig-overlay.css"] });
+      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["fig-overlay.js"] });
+      chrome.action.setBadgeText({ tabId: tab.id, text: "" });
+      return;
+    } catch { /* fall through to the honest badge below */ }
     chrome.action.setBadgeText({ tabId: tab.id, text: "!" });
     chrome.action.setBadgeBackgroundColor({ color: "#8a3b2e" });
     chrome.action.setTitle({ tabId: tab.id, title: "Fig can't run on this page: " + ((e && e.message) || e) });
@@ -75,7 +91,50 @@ chrome.commands.onCommand.addListener(async (command) => {
   toggleFig(tab);
 });
 
+// Frames that carry markings, per tab: {tabId: {frameId: {url, marks}}}.
+// Children announce themselves whenever their markings change, so at
+// dispatch the top frame knows which frames to collect from (a tab message
+// can only carry one response, so each frame is asked by frameId).
+const figFrames = new Map();
+chrome.tabs.onRemoved.addListener((tabId) => figFrames.delete(tabId));
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  // A child frame reporting its marking count (cheap; no HTML).
+  if (msg && msg.type === "fig-frame-state" && sender.tab) {
+    const byFrame = figFrames.get(sender.tab.id) || {};
+    if (msg.marks > 0) byFrame[sender.frameId] = { url: msg.url, marks: msg.marks };
+    else delete byFrame[sender.frameId];
+    figFrames.set(sender.tab.id, byFrame);
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  // Top frame switching tools -> every child frame follows.
+  if (msg && msg.type === "fig-mode" && sender.tab) {
+    chrome.tabs.sendMessage(sender.tab.id, { type: "fig-set-mode", mode: msg.mode }).catch(() => {});
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  // Dispatch-time collection: ask each recorded child frame for its
+  // annotations AND its serialized document.
+  if (msg && msg.type === "fig-collect" && sender.tab) {
+    (async () => {
+      const tabId = sender.tab.id;
+      const byFrame = figFrames.get(tabId) || {};
+      const out = [];
+      for (const frameId of Object.keys(byFrame)) {
+        if (Number(frameId) === sender.frameId) continue; // the asker collects itself
+        try {
+          const r = await chrome.tabs.sendMessage(tabId, { type: "fig-serialize" }, { frameId: Number(frameId) });
+          if (r && r.annotations) out.push(r);
+        } catch { /* frame gone or not reachable; skip it */ }
+      }
+      sendResponse({ ok: true, frames: out });
+    })();
+    return true;
+  }
+
   // Popup "Open Fig on this page" button.
   if (msg && msg.type === "fig-open") {
     (async () => {
