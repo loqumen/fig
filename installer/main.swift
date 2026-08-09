@@ -9,9 +9,17 @@ import Foundation
 // login, and starts it. Native messaging is what removes the token step — the
 // browser only lets the extension IDs listed below talk to the host.
 
-let EXTENSION_IDS = [
+// The Web Store assigns its own permanent id at first upload (the manifest `key`
+// that pins the load-unpacked id has to be stripped from the uploaded zip), so
+// the store id cannot be known until an item exists. Baking the list into the
+// binary would mean a store launch needs a new notarized companion in users'
+// hands FIRST, or every store install silently cannot reach the host.
+//
+// So the list is data: these compiled-in defaults, plus any ids in
+// ~/.fig/extension-ids.txt, plus any shipped alongside the payload. Adding an id
+// is one line and a reopen, no rebuild. `fig-allow-extension <id>` does it.
+let BUILTIN_EXTENSION_IDS = [
     "lifccpiojocfhbmomkbdobgknhjimhbm"   // stable dev id (load-unpacked)
-    // Web Store id is appended here once the listing is published.
 ]
 let HOST_NAME = "com.loqumen.fig"
 let AGENT_LABEL = "com.loqumen.figd"
@@ -75,7 +83,27 @@ for exe in ["fig-host", "figd-run", "node-resolve.sh"] {
 }
 
 // ---- 2. register the native messaging host with each browser --------------
-let origins = EXTENSION_IDS.map { "\"chrome-extension://\($0)/\"" }.joined(separator: ",\n    ")
+// An extension id is 32 chars, a-p. Anything else in the id files is a typo or
+// a pasted URL, and letting it through would write a manifest Chrome rejects
+// wholesale -- taking the working ids down with it.
+func validExtensionID(_ s: String) -> Bool {
+    s.count == 32 && s.allSatisfy { $0 >= "a" && $0 <= "p" }
+}
+
+func idsFrom(_ url: URL) -> [String] {
+    guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+    return text.split(whereSeparator: \.isNewline)
+        .map { $0.split(separator: "#")[0].trimmingCharacters(in: .whitespaces).lowercased() }
+        .filter { validExtensionID($0) }
+}
+
+var extensionIDs = BUILTIN_EXTENSION_IDS
+for source in [res.appendingPathComponent("extension-ids.txt"),
+               home.appendingPathComponent(".fig/extension-ids.txt")] {
+    for id in idsFrom(source) where !extensionIDs.contains(id) { extensionIDs.append(id) }
+}
+
+let origins = extensionIDs.map { "\"chrome-extension://\($0)/\"" }.joined(separator: ",\n    ")
 let hostManifest = """
 {
   "name": "\(HOST_NAME)",
