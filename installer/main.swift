@@ -15,6 +15,7 @@ let EXTENSION_IDS = [
 ]
 let HOST_NAME = "com.loqumen.fig"
 let AGENT_LABEL = "com.loqumen.figd"
+let LOG_PATH = "/tmp/figd.log"
 
 let fm = FileManager.default
 let home = fm.homeDirectoryForCurrentUser
@@ -29,14 +30,21 @@ func die(_ msg: String) -> Never {
     exit(1)
 }
 
+// Node is resolved by one file only: the staged node-resolve.sh the wrappers
+// source. The installer asks THAT, instead of keeping a second, narrower copy
+// of the search here -- two lists drift, and a disagreement between them is
+// exactly how a user ends up told Node is fine while the daemon cannot find it.
 func nodeFound() -> Bool {
-    let candidates = ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"]
-    if candidates.contains(where: { fm.isExecutableFile(atPath: $0) }) { return true }
-    let nvm = home.appendingPathComponent(".nvm/versions/node")
-    if let vs = try? fm.contentsOfDirectory(atPath: nvm.path) {
-        for v in vs where fm.isExecutableFile(atPath: nvm.appendingPathComponent("\(v)/bin/node").path) { return true }
-    }
-    return false
+    let script = support.appendingPathComponent("node-resolve.sh").path
+    guard fm.fileExists(atPath: script) else { return false }
+    return run("/bin/bash", ["-c", ". '\(script)' && fig_resolve_node"]) == 0
+}
+
+func logTail(_ path: String, lines: Int = 12) -> String {
+    guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return "" }
+    let rows = text.split(separator: "\n", omittingEmptySubsequences: false)
+        .map(String.init).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+    return rows.suffix(lines).joined(separator: "\n")
 }
 
 @discardableResult
@@ -61,7 +69,7 @@ for f in (try? fm.contentsOfDirectory(atPath: res.path)) ?? [] {
     do { try fm.copyItem(at: res.appendingPathComponent(f), to: dst) }
     catch { die("Could not write to \(support.path): \(error.localizedDescription)") }
 }
-for exe in ["fig-host", "figd-run"] {
+for exe in ["fig-host", "figd-run", "node-resolve.sh"] {
     try? fm.setAttributes([.posixPermissions: 0o755],
                           ofItemAtPath: support.appendingPathComponent(exe).path)
 }
@@ -110,8 +118,8 @@ let plist = """
   <array><string>\(support.appendingPathComponent("figd-run").path)</string></array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
-  <key>StandardOutPath</key><string>/tmp/figd.log</string>
-  <key>StandardErrorPath</key><string>/tmp/figd.log</string>
+  <key>StandardOutPath</key><string>\(LOG_PATH)</string>
+  <key>StandardErrorPath</key><string>\(LOG_PATH)</string>
 </dict>
 </plist>
 """
@@ -132,27 +140,60 @@ for legacy in ["com.bradytinnin.figd"] {
 }
 
 run("/bin/launchctl", ["bootout", "gui/\(uid)/\(AGENT_LABEL)"])          // ignore if absent
+
+// Start from an empty log so the tail shown below belongs to this run and not
+// to some failure from three installs ago.
+try? "".write(toFile: LOG_PATH, atomically: true, encoding: .utf8)
+
 if run("/bin/launchctl", ["bootstrap", "gui/\(uid)", plistURL.path]) != 0 {
     run("/bin/launchctl", ["load", "-w", plistURL.path])                 // older macOS
 }
 
 // ---- 4. report ------------------------------------------------------------
-Thread.sleep(forTimeInterval: 1.2)
-let up = run("/usr/bin/curl", ["-s", "-o", "/dev/null", "--max-time", "2", "http://127.0.0.1:41414/"]) == 0
+// Poll instead of sleeping once. The old code waited a flat 1.2s and called it
+// a failure, which is shorter than a cold Node start on a slower machine -- so
+// a companion that was coming up fine still got reported as broken.
+var up = false
+for _ in 0..<40 {                                                        // ~12s worst case
+    if run("/usr/bin/curl", ["-s", "-o", "/dev/null", "--max-time", "2",
+                             "http://127.0.0.1:41414/"]) == 0 { up = true; break }
+    Thread.sleep(forTimeInterval: 0.3)
+}
 
 let a = NSAlert()
-if !nodeFound() {
-    a.alertStyle = .warning
-    a.messageText = "Fig Companion is installed, but Node.js was not found"
-    a.informativeText = "Fig runs on Node, which also ships with Claude Code. Install Claude Code (or Node 18+), then open Fig Companion again."
-} else if up {
+if up {
     a.alertStyle = .informational
     a.messageText = "Fig Companion is running"
     a.informativeText = "Registered with: \(registered.isEmpty ? "no Chromium browser found" : registered.joined(separator: ", "))."
         + "\n\nAdd the Fig extension to your browser, then press ⌥⇧F on any page. There is no token to paste."
+} else if !nodeFound() {
+    a.alertStyle = .warning
+    a.messageText = "Fig Companion is installed, but Node.js was not found"
+    a.informativeText = """
+        Fig runs on Node 18 or newer, which also ships with Claude Code. \
+        Install Claude Code (or Node from nodejs.org), then open Fig Companion again.
+
+        If Node is already installed somewhere unusual, point Fig at it and reopen this app:
+
+            mkdir -p ~/.fig && command -v node > ~/.fig/node-path
+        """
 } else {
+    // Node resolves but nothing answered on the port. Show the log rather than
+    // naming a file the user then has to go find, which is what happened the
+    // first time this alert shipped.
+    let tail = logTail(LOG_PATH)
     a.alertStyle = .warning
     a.messageText = "Fig Companion installed, but did not start"
-    a.informativeText = "Check /tmp/figd.log for details, then open Fig Companion again."
+    a.informativeText = tail.isEmpty
+        ? "Nothing was written to \(LOG_PATH), which usually means the background agent never launched. "
+          + "Open Fig Companion again; if it repeats, send this to whoever shared Fig with you."
+        : "The companion log says:\n\n\(tail)"
+    a.addButton(withTitle: "OK")
+    a.addButton(withTitle: "Copy Log")
 }
-a.runModal()
+let choice = a.runModal()
+if choice == .alertSecondButtonReturn {
+    let text = logTail(LOG_PATH, lines: 200)
+    NSPasteboard.general.clearContents()
+    NSPasteboard.general.setString(text.isEmpty ? "(\(LOG_PATH) is empty)" : text, forType: .string)
+}
