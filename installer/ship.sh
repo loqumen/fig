@@ -73,16 +73,19 @@ mkdir -p "$PAYLOAD"
 for f in "$REPO"/companion/*.js; do cp "$f" "$PAYLOAD/"; done
 cp "$REPO/companion/package.json" "$PAYLOAD/"
 cp -R "$REPO/scaffold" "$PAYLOAD/scaffold"
-cp "$REPO/installer/node-resolve.sh" "$PAYLOAD/node-resolve.sh"
-cp "$REPO/installer/figd-run.sh"     "$PAYLOAD/figd-run"
-cp "$REPO/installer/fig-host.sh"     "$PAYLOAD/fig-host"
-chmod 755 "$PAYLOAD/figd-run" "$PAYLOAD/fig-host" "$PAYLOAD/node-resolve.sh"
+cp "$REPO/installer/node-resolve.sh"        "$PAYLOAD/node-resolve.sh"
+cp "$REPO/installer/extension-ids.txt"      "$PAYLOAD/extension-ids.txt"
+cp "$REPO/installer/figd-run.sh"            "$PAYLOAD/figd-run"
+cp "$REPO/installer/fig-host.sh"            "$PAYLOAD/fig-host"
+cp "$REPO/installer/fig-allow-extension.sh" "$PAYLOAD/fig-allow-extension"
+chmod 755 "$PAYLOAD/figd-run" "$PAYLOAD/fig-host" "$PAYLOAD/node-resolve.sh" \
+          "$PAYLOAD/fig-allow-extension"
 # Demo pages are development fixtures, not product.
 rm -f "$PAYLOAD"/*-demo.html
 
 say "Checking the payload is self-contained"
 for js in "$PAYLOAD"/*.js; do node --check "$js"; done
-bash -n "$PAYLOAD/figd-run" "$PAYLOAD/fig-host" "$PAYLOAD/node-resolve.sh"
+bash -n "$PAYLOAD/figd-run" "$PAYLOAD/fig-host" "$PAYLOAD/node-resolve.sh" "$PAYLOAD/fig-allow-extension"
 missing=0
 for js in "$PAYLOAD"/*.js; do
   while IFS= read -r dep; do
@@ -147,6 +150,8 @@ for required in \
   "Fig Companion.app/Contents/Resources/payload/node-resolve.sh" \
   "Fig Companion.app/Contents/Resources/payload/figd-run" \
   "Fig Companion.app/Contents/Resources/payload/fig-host" \
+  "Fig Companion.app/Contents/Resources/payload/fig-allow-extension" \
+  "Fig Companion.app/Contents/Resources/payload/extension-ids.txt" \
   "extension/manifest.json" \
   "extension/background.js" \
   "extension/fig-overlay.js" \

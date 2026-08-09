@@ -1,0 +1,9 @@
+# Extension ids allowed to reach the Fig companion, one per line.
+#
+# The load-unpacked id is compiled into the companion and does not need to be
+# listed here. This file is for ids that were not known when the binary was
+# built -- above all the Chrome Web Store id, which the store assigns at first
+# upload and which therefore cannot be baked in ahead of a listing.
+#
+# The companion reads this file and ~/.fig/extension-ids.txt at every open.
+# To add an id without reopening anything:  fig-allow-extension <id>
