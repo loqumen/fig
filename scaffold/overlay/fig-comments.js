@@ -517,22 +517,55 @@
       .forEach(function(m) { m.dataset.status = status; });
   }
 
-  function renderSuggestion(comment) {
+  function anchorSuggestion(comment) {
     var range = comment.anchor ? locate(comment.anchor) : null;
-    if (range) {
-      var marks = wrapRange(range, comment.id, comment.status || 'open');
-      marks.forEach(function(m) {
-        m.addEventListener('click', function(ev) {
-          if (suggestMode || drawMode) return;
-          ev.stopPropagation(); showDetail(comment, m);
-        });
+    if (!range) return false;
+    var marks = wrapRange(range, comment.id, comment.status || 'open');
+    marks.forEach(function(m) {
+      m.addEventListener('click', function(ev) {
+        if (suggestMode || drawMode) return;
+        ev.stopPropagation(); showDetail(comment, m);
       });
-      if (marks.length) { comment._anchored = true; return; }
-    }
+    });
+    if (!marks.length) return false;
+    comment._anchored = true;
+    return true;
+  }
+
+  function renderSuggestion(comment) {
+    if (anchorSuggestion(comment)) return;
     // Orphaned (text changed / not found): keep it visible as a pin so feedback isn't lost.
     comment._orphan = true;
     renderPin(comment, comments.indexOf(comment) + 1);
   }
+
+  // Dynamic pages (rotating text, scroll-driven sections, React re-renders)
+  // replace the text a highlight was wrapped around, which drops the <mark>.
+  // Watch the content for changes and re-apply any suggestion whose highlight
+  // is gone once its text is back on the page. An orphan pin is swapped for
+  // the highlight as soon as its text reappears.
+  function reanchorSuggestions() {
+    comments.forEach(function(c) {
+      if (c.kind !== 'suggest' || !c.anchor) return;
+      if (document.querySelector('mark.fig-suggest[data-comment-id="' + c.id + '"]')) return;
+      if (!anchorSuggestion(c)) return;
+      if (c._orphan) {
+        c._orphan = false;
+        document.querySelectorAll('.comment-pin[data-comment-id="' + c.id + '"]')
+          .forEach(function(pin) { pin.remove(); });
+      }
+    });
+  }
+  var reanchorTimer = null;
+  new MutationObserver(function(muts) {
+    var external = muts.some(function(m) {
+      var t = m.target.nodeType === 3 ? m.target.parentElement : m.target;
+      return !(t && t.closest && t.closest('.fig-toolbar,.comment-detail,.comment-popover,.comment-pin,.author-overlay,mark.fig-suggest'));
+    });
+    if (!external) return;
+    clearTimeout(reanchorTimer);
+    reanchorTimer = setTimeout(reanchorSuggestions, 150);
+  }).observe(getContentRoot(), { childList: true, subtree: true, characterData: true });
 
   // Capture a text selection in suggest mode and open the anchored composer.
   document.addEventListener('mouseup', async function(e) {

@@ -12,7 +12,7 @@
   // guard would keep running stale code forever. On a version mismatch,
   // tear the old overlay down (its toggle detaches its own listeners) and
   // let this file rebuild fresh.
-  const FIG_VERSION = 20;
+  const FIG_VERSION = 21;
   if (window.__figToggle && window.__figVersion !== FIG_VERSION) {
     if (document.querySelector(".fig-toolbar")) { try { window.__figToggle(); } catch { /* stale */ } }
     window.__figToggle = null;
@@ -1575,6 +1575,29 @@
     if (!range) return false;
     return wrapRangeTextNodes(range, h.id).length > 0;
   };
+
+  // Dynamic pages (rotating text, scroll-driven sections, React re-renders)
+  // replace the text a highlight was wrapped around, which drops its <mark>.
+  // While Fig is on, watch the page and repaint any highlight whose mark is
+  // gone as soon as its quote is back in the DOM.
+  let repaintTimer = null;
+  const repaintMissing = () => {
+    if (!state.on) return;
+    for (const h of state.highlights) {
+      if (document.querySelector('mark[data-fig-highlight="' + h.id + '"]')) continue;
+      repaintHighlight(h);
+    }
+  };
+  new MutationObserver((muts) => {
+    if (!state.on || !state.highlights.length) return;
+    const external = muts.some((m) => {
+      const t = m.target.nodeType === 3 ? m.target.parentElement : m.target;
+      return !(t && t.closest && t.closest("[data-fig-ui], mark[data-fig-highlight]"));
+    });
+    if (!external) return;
+    clearTimeout(repaintTimer);
+    repaintTimer = setTimeout(repaintMissing, 150);
+  }).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
 
   const restore = () => {
     const key = persistKey();
