@@ -72,6 +72,7 @@ function linkCloudflare() {
   fs.mkdirSync(path.join(dir, "public"), { recursive: true });
   copy(path.join(SCAFFOLD, "cloudflare", "worker.js"), path.join(dir, "worker.js"));
   copy(path.join(SCAFFOLD, "shared", "review-api-core.js"), path.join(dir, "review-api-core.js"));
+  copy(path.join(SCAFFOLD, "cloudflare", "d1-store.js"), path.join(dir, "d1-store.js"));
   copy(path.join(SCAFFOLD, "cloudflare", "schema.sql"), path.join(dir, "schema.sql"));
   fs.writeFileSync(path.join(dir, "public", "index.html"), placeholderIndex());
 
