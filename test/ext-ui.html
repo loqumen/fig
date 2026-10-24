@@ -1,0 +1,139 @@
+<!doctype html>
+<!-- Headless UI test for the extension's /fig tools (extension/fig-ui + fig-local-api +
+     fig-ext): toolbar, comment, suggestion, drawing, the local store, the Fig button's
+     payload, saving across reloads, and toggling off. Run via test/ext-ui.sh. -->
+<html>
+<head><meta charset="utf-8"><title>Fig extension test page</title>
+<link rel="stylesheet" href="../extension/fig-ui/fig-ui.css">
+<style>body { font: 16px/1.6 system-ui; margin: 40px; } main { width: 700px; }</style>
+</head>
+<body>
+<main>
+<h1 id="h">Alpha beta gamma delta epsilon zeta</h1>
+<p id="p1">The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.</p>
+<p id="p2">Sphinx of black quartz, judge my vow. How vexingly quick daft zebras jump.</p>
+</main>
+<pre id="results">RUNNING</pre>
+<script>
+  // Minimal chrome shim: storage.local deep-copies like the real API; sendMessage
+  // records the Fig button's payload and answers like the companion.
+  window.__figTestMem = { figExtPrefs: { author: "Tester", onboarded: true } };
+  const clone = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)));
+  window.chrome = {
+    runtime: {
+      id: "figtest", lastError: undefined,
+      getURL: (p) => "../extension/" + p,
+      sendMessage: (msg, cb) => {
+        if (msg && msg.type === "fig-dispatch") { window.__figDispatched = msg.payload; if (cb) cb({ ok: true }); return; }
+        if (cb) cb({ ok: true });
+      },
+    },
+    storage: { local: {
+      get: (key, cb) => cb({ [key]: clone(window.__figTestMem[key]) }),
+      set: (obj, cb) => { for (const [k, v] of Object.entries(obj)) window.__figTestMem[k] = clone(v); if (cb) cb(); },
+      remove: (k, cb) => { delete window.__figTestMem[k]; if (cb) cb(); },
+    } },
+  };
+</script>
+<script src="../extension/fig-ui/review-core.js"></script>
+<script src="../extension/fig-local-api.js"></script>
+<script src="../extension/fig-ui/toolbar.js"></script>
+<script src="../extension/fig-ui/fig-comments.js"></script>
+<script>
+  const out = [];
+  const check = (name, ok, detail) => out.push((ok ? "PASS " : "FAIL ") + name + (detail ? "  (" + detail + ")" : ""));
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const at = (el, dx, dy) => { const r = el.getBoundingClientRect(); return { clientX: r.left + dx, clientY: r.top + dy }; };
+  const mouse = (type, target, pos) => target.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window, button: 0, ...pos }));
+  const enter = (ta, text) => { ta.value = text; ta.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true })); };
+
+  (async () => {
+    try {
+      const s = document.createElement("script");
+      s.src = "../extension/fig-ext.js";
+      document.body.appendChild(s);
+      await wait(600);
+
+      const bar = document.querySelector(".fig-toolbar");
+      check("toolbar is the /fig toolbar", !!bar && ["drawToggle", "commentToggle", "suggestToggle", "clearAllComments", "figHelp"].every((id) => document.getElementById(id)));
+      check("green Fig button is the only addition", !!document.getElementById("figGo") && bar.querySelectorAll(":scope > button").length === 6);
+      const version = document.body.dataset.figVersion || "";
+      check("page has a local store name", /^ext-[a-z0-9]+$/.test(version), version);
+      check("no first-visit card once seen", !document.querySelector(".fig-onboard.visible"));
+
+      // comment
+      document.getElementById("commentToggle").click();
+      mouse("click", document.getElementById("p2"), at(document.getElementById("p2"), 60, 10));
+      await wait(200);
+      const ta = document.querySelector(".comment-popover textarea");
+      check("comment composer opens without a name prompt", !!ta && !document.querySelector(".author-overlay.visible"));
+      if (ta) enter(ta, "Make this line bolder");
+      await wait(300);
+      check("comment pin placed", document.querySelectorAll(".comment-pin").length === 1);
+      document.getElementById("commentToggle").click();
+
+      // suggestion
+      document.getElementById("suggestToggle").click();
+      const text = document.getElementById("p1").firstChild;
+      const range = document.createRange();
+      range.setStart(text, 4); range.setEnd(text, 19);   // "quick brown fox"
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      mouse("mouseup", document.getElementById("p1"), at(document.getElementById("p1"), 80, 10));
+      await wait(200);
+      const sta = document.querySelector(".suggest-popover textarea");
+      check("suggestion composer opens on a selection", !!sta);
+      if (sta) enter(sta, "Say red fox instead");
+      await wait(300);
+      check("suggestion marked in the text", !!document.querySelector("mark.fig-suggest"));
+      document.getElementById("suggestToggle").click();
+
+      // drawing
+      document.getElementById("drawToggle").click();
+      await wait(100);
+      const canvas = document.querySelector(".fig-draw-canvas");
+      check("draw canvas present", !!canvas);
+      if (canvas) {
+        const h = document.getElementById("h");
+        const p = (dx, dy) => at(h, dx, dy);
+        mouse("mousedown", canvas, p(20, 5)); mouse("mousemove", canvas, p(80, 20)); mouse("mousemove", canvas, p(140, 30)); mouse("mouseup", canvas, p(140, 30));
+      }
+      await wait(300);
+      document.getElementById("drawToggle").click();
+
+      await wait(1500);   // let the overlay's queued writes reach the store
+      const snap = await window.__figLocalApi.snapshot(version);
+      check("local store holds 2 comments and 1 stroke", snap.comments.length === 2 && snap.strokes.length === 1, snap.comments.length + "/" + snap.strokes.length);
+      const saved = window.__figTestMem["figStore::" + location.href.split("#")[0]];
+      check("marks saved for a reload", !!saved && Object.keys(saved.comments[version] || {}).length === 2);
+
+      // the Fig button
+      document.getElementById("figGo").click();
+      await wait(5500);
+      const p = window.__figDispatched;
+      check("Fig button sent a job", !!p);
+      if (p) {
+        const a = p.annotations;
+        check("comment carries its spot on the page", a.comments.length === 1 && a.comments[0].n === 1 && /p:nth-of-type\(2\)|#p2/.test(a.comments[0].targetPath) && a.comments[0].text === "Make this line bolder", a.comments[0] && a.comments[0].targetPath);
+        check("suggestion becomes a highlight with its note", a.highlights.length === 1 && a.highlights[0].text === "quick brown fox" && a.highlights[0].note === "Say red fox instead");
+        check("stroke has a box and a nearby element", a.strokes.length === 1 && a.strokes[0].box.w > 0 && !!a.strokes[0].nearPath, a.strokes[0] && a.strokes[0].nearPath);
+        check("snapshot has no Fig tools", !/fig-toolbar|comment-pin|fig-draw-canvas|data-fig-version|fig\.local/.test(p.html));
+        check("snapshot marks the suggestion for the AI", /<mark data-fig-highlight="">quick brown fox<\/mark>/.test(p.html));
+        check("snapshot has a base for assets", /<base href=/.test(p.html));
+      }
+
+      // on / off
+      window.__figExtToggle();
+      check("toggle hides the tools", document.documentElement.classList.contains("fig-ext-off") && getComputedStyle(document.querySelector(".fig-toolbar")).display === "none");
+      window.__figExtToggle();
+      check("toggle shows them again", !document.documentElement.classList.contains("fig-ext-off") && getComputedStyle(document.querySelector(".fig-toolbar")).display !== "none");
+
+      // the page's own fetch is untouched
+      check("page requests are not intercepted", typeof window.fetch === "function");
+    } catch (e) {
+      check("no exception", false, String(e && e.stack || e));
+    }
+    document.getElementById("results").textContent = out.join("\n");
+  })();
+</script>
+</body>
+</html>

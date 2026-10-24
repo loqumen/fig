@@ -17,10 +17,13 @@
   };
 
   // ══════════════════════════════════════════════
-  //  Sync layer — eventual consistency
-  //  Comments are saved locally first, then synced to API.
-  //  Failed syncs go to a retry queue and flush on every load + every 30s.
-  //  IDs are client-generated so POSTs are idempotent (no duplicates on retry).
+  //  Sync layer
+  //  The server is the source of truth. A browser shows the server's list plus
+  //  only its own not-yet-acknowledged writes (queued in localStorage), and
+  //  re-reads the server every few seconds, so every reviewer converges on the
+  //  same state and a delete made anywhere disappears everywhere.
+  //  Writes run one at a time, in order, so a delete can never overtake the
+  //  create it cancels. IDs are client-generated, so POST retries are idempotent.
   // ══════════════════════════════════════════════
   var LS_CACHE = 'fig-cache-' + VERSION;        // local snapshot of all comments
   var LS_QUEUE_POST = 'fig-queue-post-' + VERSION;     // pending creates/replies
@@ -51,6 +54,37 @@
     var q = lsGet(key).filter(function(x) { return x.id !== id; });
     lsSet(key, q);
   }
+  // Patches to one comment merge, so a status change can't drop a pending text edit.
+  function queuePatch(patch) {
+    var q = lsGet(LS_QUEUE_PATCH);
+    var i = q.findIndex(function(x) { return x.id === patch.id; });
+    if (i >= 0) q[i] = Object.assign({}, q[i], patch); else q.push(patch);
+    lsSet(LS_QUEUE_PATCH, q);
+    return i >= 0 ? q[i] : patch;
+  }
+
+  // Every write is a commit to the GitHub-backed store, and simultaneous commits
+  // from different reviewers can collide (the server answers 5xx). Retry those,
+  // and network drops, with backoff before giving up to the retry queue.
+  async function send(url, opts) {
+    var wait = [400, 900, 1800, 3500];
+    for (var i = 0; ; i++) {
+      try {
+        var res = await fetch(url, opts);
+        if (res.status < 500 || i >= wait.length) return res;
+      } catch (err) {
+        if (i >= wait.length) throw err;
+      }
+      await new Promise(function(r) { setTimeout(r, wait[i] + Math.random() * 300); });
+    }
+  }
+
+  var opChain = Promise.resolve();
+  function serial(fn) {
+    var run = opChain.then(fn, fn);
+    opChain = run.catch(function() {});
+    return run;
+  }
 
   function mergeById(a, b) {
     var map = new Map();
@@ -75,10 +109,15 @@
     });
   }
 
-  // Sync individual operations (idempotent on the server)
-  async function syncPost(comment) {
+  // Sync individual operations (idempotent on the server). The _ versions do the
+  // request; the public ones run through serial() so writes stay in order.
+  function syncPost(comment) { return serial(function() { return _syncPost(comment); }); }
+  function syncPatch(patch) { return serial(function() { return _syncPatch(patch); }); }
+  function syncDelete(id) { return serial(function() { return _syncDelete(id); }); }
+
+  async function _syncPost(comment) {
     try {
-      var res = await fetch(API, {
+      var res = await send(API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(Object.assign({}, comment, { version: VERSION }))
@@ -90,23 +129,24 @@
     } catch (err) { /* network failure — stays in queue */ }
     return false;
   }
-  async function syncPatch(patch) {
+  async function _syncPatch(patch) {
     try {
-      var res = await fetch(API, {
+      var res = await send(API, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(Object.assign({}, patch, { version: VERSION }))
       });
-      if (res.ok) {
+      // 404: someone deleted the comment; the edit has nothing left to apply to.
+      if (res.ok || res.status === 404) {
         queueRemove(LS_QUEUE_PATCH, patch.id);
         return true;
       }
     } catch (err) {}
     return false;
   }
-  async function syncDelete(id) {
+  async function _syncDelete(id) {
     try {
-      var res = await fetch(apiDelete(id), { method: 'DELETE' });
+      var res = await send(apiDelete(id), { method: 'DELETE' });
       if (res.ok || res.status === 404) {
         queueRemove(LS_QUEUE_DELETE, id);
         return true;
@@ -115,13 +155,15 @@
     return false;
   }
 
-  async function flushQueues() {
-    var posts = lsGet(LS_QUEUE_POST);
-    for (var i = 0; i < posts.length; i++) await syncPost(posts[i]);
-    var patches = lsGet(LS_QUEUE_PATCH);
-    for (var j = 0; j < patches.length; j++) await syncPatch(patches[j]);
-    var deletes = lsGet(LS_QUEUE_DELETE);
-    for (var k = 0; k < deletes.length; k++) await syncDelete(deletes[k].id);
+  function flushQueues() {
+    return serial(async function() {
+      var posts = lsGet(LS_QUEUE_POST);
+      for (var i = 0; i < posts.length; i++) await _syncPost(posts[i]);
+      var patches = lsGet(LS_QUEUE_PATCH);
+      for (var j = 0; j < patches.length; j++) await _syncPatch(patches[j]);
+      var deletes = lsGet(LS_QUEUE_DELETE);
+      for (var k = 0; k < deletes.length; k++) await _syncDelete(deletes[k].id);
+    });
   }
 
   // Background flush every 30s
@@ -181,6 +223,16 @@
   }
 
   // ── Coordinate helpers ──
+  // Popovers are centred on their anchor (translate -50%), so one anchored near
+  // a screen edge (a highlight that starts at the page's left margin) opens
+  // half off-screen. Nudge it back inside the viewport after it renders.
+  function keepInViewport(el) {
+    var r = el.getBoundingClientRect(), m = 8, dx = 0;
+    if (r.left < m) dx = m - r.left;
+    else if (r.right > window.innerWidth - m) dx = window.innerWidth - m - r.right;
+    if (dx) el.style.marginLeft = dx + 'px';
+  }
+
   function pageToPercent(pageX, pageY) {
     // Use clientWidth/Height (body's padding box) to match what CSS % renders against.
     // scrollWidth/Height can be much larger than visible area on pages using
@@ -354,6 +406,35 @@
   function closeAllPopovers() {
     document.querySelectorAll('.comment-popover, .comment-detail').forEach(el => el.remove());
     openPopover = null;
+    clearPendingHighlight();
+  }
+
+  // Yellow boxes over the text a suggestion is being written for: drawn while
+  // dragging inside buttons/links (where browsers paint no selection) and kept
+  // while the composer is open, since focusing its textarea clears the selection.
+  function clearPendingHighlight() {
+    document.querySelectorAll('.fig-pending-hl').forEach(function(el) { el.remove(); });
+  }
+  function showPendingHighlight(range) {
+    clearPendingHighlight();
+    if (!range || range.collapsed) return;
+    var host = range.commonAncestorContainer;
+    if (host.nodeType === 3) host = host.parentElement;
+    var fixed = false;
+    for (var a = host; a && a !== document.body; a = a.parentElement) {
+      if (getComputedStyle(a).position === 'fixed') { fixed = true; break; }
+    }
+    var box = document.createElement('div');
+    box.className = 'fig-pending-hl' + (fixed ? ' is-fixed' : '');
+    var dx = fixed ? 0 : window.scrollX, dy = fixed ? 0 : window.scrollY;
+    Array.prototype.forEach.call(range.getClientRects(), function(r) {
+      if (r.width < 1 || r.height < 1) return;
+      var hl = document.createElement('span');
+      hl.style.left = (r.left + dx) + 'px'; hl.style.top = (r.top + dy) + 'px';
+      hl.style.width = r.width + 'px'; hl.style.height = r.height + 'px';
+      box.appendChild(hl);
+    });
+    document.body.appendChild(box);
   }
 
   // ══════════════════════════════════════════════
@@ -361,7 +442,7 @@
   // ══════════════════════════════════════════════
 
   // ── Place comment on click ──
-  document.addEventListener('click', async (e) => {
+  async function placeCommentOnClick(e) {
     if (!commentMode) return;
     // A popover button (Edit / Approve / Reject) may have rebuilt the popover via
     // innerHTML mid-dispatch, detaching e.target. A detached node's closest() returns
@@ -385,12 +466,14 @@
       <textarea class="comment-popover-input" rows="3" placeholder="Leave a comment..." autofocus></textarea>
       <div class="comment-popover-hint">Press Enter to save &middot; Esc to cancel</div>`;
     document.body.appendChild(popover);
+    keepInViewport(popover);
 
     const textarea = popover.querySelector('textarea');
     textarea.focus();
 
     textarea.addEventListener('keydown', async (ev) => {
       if (ev.key === 'Escape') {
+        ev.stopPropagation();
         popover.remove();
         return;
       }
@@ -419,7 +502,8 @@
         syncPost(comment);
       }
     });
-  });
+  }
+  document.addEventListener('click', placeCommentOnClick);
 
   // ══════════════════════════════════════════════
   //  Suggest mode — text-anchored accuracy feedback
@@ -427,15 +511,16 @@
   //  (open → diagnosed → approved → applied). Anchors use a text-quote
   //  selector (quote + prefix/suffix) so they re-locate on reload.
   // ══════════════════════════════════════════════
-  function getContentRoot() { return document.querySelector('main') || document.body; }
+  // The whole page is suggestable (header, nav and footer included); fig's own UI is not.
+  var FIG_UI = '.fig-toolbar,.comment-detail,.comment-popover,.comment-pin,.author-overlay,.fig-onboard,.draw-colors,.fig-draw-canvas,.fig-pending-hl,.fig-toast';
+  function getContentRoot() { return document.body; }
 
   function buildTextIndex() {
     var nodes = [], text = '';
     var tw = document.createTreeWalker(getContentRoot(), NodeFilter.SHOW_TEXT, {
       acceptNode: function(n) {
         if (!n.nodeValue) return NodeFilter.FILTER_REJECT;
-        if (n.parentElement && n.parentElement.closest(
-          '.fig-toolbar,.comment-detail,.comment-popover,.comment-pin,.author-overlay,script,style'))
+        if (n.parentElement && n.parentElement.closest(FIG_UI + ',script,style,noscript,template'))
           return NodeFilter.FILTER_REJECT;
         return NodeFilter.FILTER_ACCEPT;
       }
@@ -493,6 +578,16 @@
       var s = node === range.startContainer ? range.startOffset : 0;
       var e = node === range.endContainer ? range.endOffset : node.nodeValue.length;
       if (s >= e) return;
+      // In a flex/grid parent (a button laid out with inline-flex + gap) every
+      // split piece becomes its own flex item, so the gap opens up mid-word.
+      // Keep the pieces together in one inline wrapper first.
+      var par = node.parentNode;
+      if (par && par.nodeType === 1 && !par.classList.contains('fig-flow') &&
+          /(flex|grid)/.test(getComputedStyle(par).display)) {
+        var flow = document.createElement('span');
+        flow.className = 'fig-flow';
+        par.insertBefore(flow, node); flow.appendChild(node);
+      }
       var mid = s > 0 ? node.splitText(s) : node;
       if (e - s < mid.nodeValue.length) mid.splitText(e - s);
       var mark = document.createElement('mark');
@@ -503,16 +598,21 @@
     return marks;
   }
 
+  function unwrapMark(m) {
+    var p = m.parentNode; while (m.firstChild) p.insertBefore(m.firstChild, m); p.removeChild(m); p.normalize();
+    // Drop the flex wrapper wrapRange added once no highlight is left inside it.
+    if (p.classList && p.classList.contains('fig-flow') && !p.querySelector('mark.fig-suggest')) {
+      var g = p.parentNode; while (p.firstChild) g.insertBefore(p.firstChild, p); g.removeChild(p); g.normalize();
+    }
+  }
+
   function unwrapSuggestion(id) {
-    document.querySelectorAll('mark.fig-suggest[data-comment-id="' + id + '"]').forEach(function(m) {
-      var p = m.parentNode; while (m.firstChild) p.insertBefore(m.firstChild, m); p.removeChild(m); p.normalize();
-    });
+    document.querySelectorAll('mark.fig-suggest[data-comment-id="' + id + '"]').forEach(unwrapMark);
   }
 
   function setStatus(comment, status) {
     comment.status = status; backupToLocal();
-    var patch = { id: comment.id, status: status };
-    queueAdd(LS_QUEUE_PATCH, patch); syncPatch(patch);
+    syncPatch(queuePatch({ id: comment.id, status: status }));
     document.querySelectorAll('mark.fig-suggest[data-comment-id="' + comment.id + '"]')
       .forEach(function(m) { m.dataset.status = status; });
   }
@@ -524,7 +624,7 @@
     marks.forEach(function(m) {
       m.addEventListener('click', function(ev) {
         if (suggestMode || drawMode) return;
-        ev.stopPropagation(); showDetail(comment, m);
+        ev.preventDefault(); ev.stopPropagation(); showDetail(comment, m);
       });
     });
     if (!marks.length) return false;
@@ -558,9 +658,16 @@
   }
   var reanchorTimer = null;
   new MutationObserver(function(muts) {
+    function isFig(n) {
+      var el = n && (n.nodeType === 3 ? n.parentElement : n);
+      return !!(el && el.closest && el.closest(FIG_UI + ',mark.fig-suggest'));
+    }
     var external = muts.some(function(m) {
-      var t = m.target.nodeType === 3 ? m.target.parentElement : m.target;
-      return !(t && t.closest && t.closest('.fig-toolbar,.comment-detail,.comment-popover,.comment-pin,.author-overlay,mark.fig-suggest'));
+      if (m.type === 'childList') {
+        var changed = Array.prototype.slice.call(m.addedNodes).concat(Array.prototype.slice.call(m.removedNodes));
+        if (changed.length && changed.every(isFig)) return false;
+      }
+      return !isFig(m.target);
     });
     if (!external) return;
     clearTimeout(reanchorTimer);
@@ -568,15 +675,79 @@
   }).observe(getContentRoot(), { childList: true, subtree: true, characterData: true });
 
   // Capture a text selection in suggest mode and open the anchored composer.
-  document.addEventListener('mouseup', async function(e) {
+  document.addEventListener('mouseup', function(e) {
     if (!suggestMode) return;
-    if (e.target.closest && e.target.closest('.fig-toolbar,.comment-popover,.comment-detail,.author-overlay')) return;
+    if (e.target.closest && e.target.closest(FIG_UI)) return;
     var sel = window.getSelection();
     if (!sel || sel.isCollapsed || !sel.rangeCount) return;
     var range = sel.getRangeAt(0);
     if (range.collapsed || !range.toString().trim()) return;
     if (!getContentRoot().contains(range.commonAncestorContainer)) return;
+    openSuggestComposer(range);
+  });
 
+  // Buttons and links: dragging across them drags the link (or, for <button>,
+  // selects nothing) and the release clicks through. In suggest mode a click on
+  // one suggests its whole label instead, and nothing navigates or submits.
+  var SUGGEST_CLICKABLE = 'a,button,[role="button"],input[type="submit"],input[type="button"],summary,label';
+  var lastComposerAt = 0;
+  // Browsers won't drag-select inside a link or <button> (Safari never; Chrome
+  // only sometimes), so suggest mode drives that selection itself from the caret
+  // under the pointer. A drag picks exactly those letters; a plain click falls
+  // through to the whole-label handler below.
+  function caretAt(x, y) {
+    var node, off;
+    if (document.caretPositionFromPoint) {
+      var cp = document.caretPositionFromPoint(x, y); if (cp) { node = cp.offsetNode; off = cp.offset; }
+    } else if (document.caretRangeFromPoint) {
+      var cr = document.caretRangeFromPoint(x, y); if (cr) { node = cr.startContainer; off = cr.startOffset; }
+    }
+    return (node && node.nodeType === 3) ? { node: node, off: off } : null;
+  }
+  var dragSel = null;
+  document.addEventListener('mousedown', function(e) {
+    dragSel = null;
+    if (!suggestMode || e.button !== 0 || !e.target.closest) return;
+    if (e.target.closest(FIG_UI) || !e.target.closest(SUGGEST_CLICKABLE)) return;
+    e.preventDefault();   // no link drag, no button focus, no native selection
+    var c = caretAt(e.clientX, e.clientY);
+    window.getSelection().removeAllRanges();
+    clearPendingHighlight();
+    if (c) dragSel = c;
+  }, true);
+  document.addEventListener('mousemove', function(e) {
+    if (!dragSel || !(e.buttons & 1)) return;
+    var c = caretAt(e.clientX, e.clientY); if (!c) return;
+    var sel = window.getSelection();
+    sel.setBaseAndExtent(dragSel.node, dragSel.off, c.node, c.off);
+    if (sel.rangeCount) showPendingHighlight(sel.getRangeAt(0));
+  }, true);
+  document.addEventListener('mouseup', function() { dragSel = null; }, true);
+  function suggestOnClick(e) {
+    if (!suggestMode || !e.target.closest) return;
+    if (e.target.closest(FIG_UI)) return;
+    var el = e.target.closest(SUGGEST_CLICKABLE);
+    if (!el) return;
+    e.preventDefault(); e.stopPropagation();
+    if (Date.now() - lastComposerAt < 400) return;   // a drag-selection just opened the composer
+    // Bound the range by text nodes so the anchor carries prefix/suffix context.
+    var tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {
+      acceptNode: function(n) { return n.nodeValue.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT; }
+    });
+    var first = tw.nextNode(), last = first, n;
+    if (!first) return;
+    while ((n = tw.nextNode())) last = n;
+    var range = document.createRange();
+    range.setStart(first, first.nodeValue.search(/\S/));
+    range.setEnd(last, last.nodeValue.replace(/\s+$/, '').length);
+    var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    openSuggestComposer(range);
+  }
+  document.addEventListener('click', suggestOnClick, true);
+
+  async function openSuggestComposer(range) {
+    lastComposerAt = Date.now();
+    var sel = window.getSelection();
     var anchor = anchorFromRange(range);
     var rect = range.getBoundingClientRect();
     var pct = pageToPercent(rect.right + window.scrollX, rect.top + window.scrollY);
@@ -591,12 +762,14 @@
       '<textarea class="comment-popover-input" rows="3" placeholder="What is inaccurate or needs changing?"></textarea>' +
       '<div class="comment-popover-hint">Enter to save · Esc to cancel</div>';
     document.body.appendChild(pop);
+    keepInViewport(pop);
+    showPendingHighlight(range);
     var ta = pop.querySelector('textarea'); ta.focus();
     ta.addEventListener('keydown', function(ev) {
-      if (ev.key === 'Escape') { pop.remove(); return; }
+      if (ev.key === 'Escape') { ev.stopPropagation(); pop.remove(); clearPendingHighlight(); return; }
       if (ev.key === 'Enter' && !ev.shiftKey) {
         ev.preventDefault();
-        var text = ta.value.trim(); if (!text) { pop.remove(); return; }
+        var text = ta.value.trim(); if (!text) { pop.remove(); clearPendingHighlight(); return; }
         var comment = {
           id: genId(), kind: 'suggest', status: 'open',
           x: pct.x, y: pct.y, text: text, author: author,
@@ -605,11 +778,11 @@
         comments.push(comment); backupToLocal();
         if (sel) sel.removeAllRanges();
         renderSuggestion(comment);
-        pop.remove();
+        pop.remove(); clearPendingHighlight();
         queueAdd(LS_QUEUE_POST, comment); syncPost(comment);
       }
     });
-  });
+  }
 
   // ── Render pins ──
   function renderPin(comment, index) {
@@ -670,9 +843,7 @@
       pin.style.top = y + '%';
 
       backupToLocal();
-      var patch = { id: comment.id, x: x, y: y };
-      queueAdd(LS_QUEUE_PATCH, patch);
-      syncPatch(patch);
+      syncPatch(queuePatch({ id: comment.id, x: x, y: y }));
     } else {
       showDetail(comment, pin);
     }
@@ -707,11 +878,11 @@
     // Build replies HTML
     let repliesHtml = '';
     if (comment.replies && comment.replies.length) {
-      repliesHtml = '<div style="margin-top:10px;border-top:1px solid #333;padding-top:8px;">';
+      repliesHtml = '<div class="fig-replies">';
       comment.replies.forEach(r => {
         const rd = new Date(r.timestamp);
         const rt = rd.toLocaleDateString('en-US', { month:'short', day:'numeric', hour:'numeric', minute:'2-digit' });
-        repliesHtml += `<div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:start;gap:8px;"><div><div style="color:#e0e0e0;font-size:13px;line-height:1.4;">${escapeHtml(r.text)}</div><div style="font-size:10px;color:#666;margin-top:2px;"><strong style="color:#999;">${escapeHtml(r.author)}</strong> · ${rt}</div></div><button class="reply-delete-btn" data-reply-id="${r.id}" style="background:none;border:none;color:#555;font-size:14px;cursor:pointer;padding:0 2px;line-height:1;flex-shrink:0;" title="Delete reply">&times;</button></div>`;
+        repliesHtml += `<div class="fig-reply"><div><div class="fig-reply-text">${escapeHtml(r.text)}</div><div class="fig-reply-meta"><strong>${escapeHtml(r.author)}</strong> · ${rt}</div></div><button class="reply-delete-btn" data-reply-id="${r.id}" title="Delete reply">&times;</button></div>`;
       });
       repliesHtml += '</div>';
     }
@@ -735,13 +906,14 @@
       <div class="comment-detail-meta"><strong>${escapeHtml(comment.author)}</strong> &middot; ${timeStr}</div>
       ${repliesHtml}
       <div style="margin-top:8px;">
-        <textarea class="comment-popover-input" rows="1" placeholder="Reply..." style="font-size:12px;padding:6px 8px;"></textarea>
+        <textarea class="comment-popover-input" rows="1" placeholder="Reply..." style="font-size:12px;padding:7px 10px;"></textarea>
       </div>
       <div class="comment-detail-actions">
         <button class="comment-detail-edit" data-id="${comment.id}">Edit</button>
         <button class="comment-detail-delete" data-id="${comment.id}">Delete</button>
       </div>`;
     document.body.appendChild(detail);
+    keepInViewport(detail);
     openPopover = detail;
 
     // ── Suggest status: Approve / Reject ──
@@ -764,11 +936,12 @@
         if (!replyText) return;
         const author = getAuthor() || 'Anonymous';
         try {
-          const res = await fetch(API, {
+          // Through serial(): the parent's own create (if still pending) lands first.
+          const res = await serial(() => send(API, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ text: replyText, author, parentId: comment.id, version: VERSION })
-          });
+            body: JSON.stringify({ id: genId(), text: replyText, author, parentId: comment.id, version: VERSION })
+          }));
           if (!res.ok) throw new Error('Reply failed');
           const reply = await res.json();
           if (!comment.replies) comment.replies = [];
@@ -777,7 +950,7 @@
           openPopover = null;
           showDetail(comment, pin);
         } catch (err) {
-          replyInput.style.borderColor = '#e06060';
+          replyInput.style.borderColor = '#8a3b2e';
           console.error('Failed to save reply:', err);
         }
       }
@@ -789,13 +962,15 @@
         e.stopPropagation();
         const replyId = btn.dataset.replyId;
         try {
-          await fetch(apiDelete(replyId), { method: 'DELETE' });
+          const res = await serial(() => send(apiDelete(replyId), { method: 'DELETE' }));
+          if (!res.ok && res.status !== 404) throw new Error('DELETE reply ' + res.status);
           if (comment.replies) comment.replies = comment.replies.filter(r => r.id !== replyId);
           detail.remove();
           openPopover = null;
           showDetail(comment, pin);
         } catch (err) {
           console.error('Failed to delete reply:', err);
+          figToast('That reply could not be deleted. Please try again.');
         }
       });
     });
@@ -824,9 +999,7 @@
         if (!newText) return;
         comment.text = newText;
         backupToLocal();
-        var patch = { id: comment.id, text: newText };
-        queueAdd(LS_QUEUE_PATCH, patch);
-        syncPatch(patch);
+        syncPatch(queuePatch({ id: comment.id, text: newText }));
         detail.remove();
         openPopover = null;
         showDetail(comment, pin);
@@ -842,7 +1015,7 @@
       actionsEl.querySelector('.comment-edit-cancel').addEventListener('click', cancelEdit);
       textarea.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); saveEdit(); }
-        if (ev.key === 'Escape') { ev.preventDefault(); cancelEdit(); }
+        if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); cancelEdit(); }
       });
     });
 
@@ -863,9 +1036,24 @@
     });
   }
 
+  // Number pins by comment order (oldest first), not by when this browser
+  // happened to draw them, so every reviewer sees the same numbers.
   function renumberPins() {
-    const pins = document.querySelectorAll('.comment-pin');
-    pins.forEach((pin, i) => { pin.textContent = i + 1; });
+    let n = 0;
+    comments.forEach(c => {
+      const pin = document.querySelector('.comment-pin[data-comment-id="' + c.id + '"]');
+      if (pin) pin.textContent = ++n;
+    });
+  }
+
+  // Small notice for a write that failed, so nothing fails silently.
+  function figToast(msg) {
+    var t = document.createElement('div');
+    t.className = 'fig-toast';
+    t.setAttribute('role', 'status');
+    t.textContent = msg;
+    document.body.appendChild(t);
+    setTimeout(function() { t.remove(); }, 6000);
   }
 
   function escapeHtml(str) {
@@ -875,7 +1063,7 @@
   }
 
   // ── Close popover on outside click ──
-  document.addEventListener('click', (e) => {
+  function closeOnOutsideClick(e) {
     if (!openPopover) return;
     // If the clicked element was detached mid-handler (Edit/Approve/Reply rebuild
     // the popover's buttons via innerHTML, removing e.target), closest() returns
@@ -885,11 +1073,46 @@
     if (!e.target.closest('.comment-detail, .comment-pin, mark.fig-suggest, .comment-popover')) {
       closeAllPopovers();
     }
+  }
+  document.addEventListener('click', closeOnOutsideClick);
+
+  // ── While a tool is on, the page under review is inert ──
+  // Comment, suggest or draw mode: no click, hover, focus, key press or form
+  // submit reaches the site (no lightbox, no link, no hover preview, no form).
+  // Fig's own UI is untouched. Window-capture runs before every page listener;
+  // fig's own click handlers are then called directly, so only the tool acts.
+  function anyMode() { return commentMode || suggestMode || drawMode; }
+  function onPage(e) {
+    var t = e.target;
+    if (t && t.nodeType === 3) t = t.parentElement;
+    return !!(t && t.closest && !t.closest(FIG_UI + ',.fig-replies'));
+  }
+  window.addEventListener('click', function(e) {
+    if (!anyMode() || !onPage(e)) return;
+    e.preventDefault(); e.stopPropagation();
+    suggestOnClick(e); placeCommentOnClick(e); closeOnOutsideClick(e);
+  }, true);
+  ['dblclick', 'auxclick', 'contextmenu', 'submit', 'focusin', 'focus',
+   'mouseover', 'mouseout', 'mouseenter', 'mouseleave',
+   'pointerover', 'pointerout', 'pointerenter', 'pointerleave', 'pointerdown', 'pointerup',
+   'touchstart', 'touchend', 'dragstart', 'change', 'input'].forEach(function(type) {
+    window.addEventListener(type, function(e) {
+      if (!anyMode() || !onPage(e)) return;
+      if (type === 'dragstart' || type === 'submit' || type === 'dblclick' || type === 'auxclick') e.preventDefault();
+      e.stopPropagation();
+    }, true);
   });
+  window.addEventListener('keydown', function(e) {
+    if (!anyMode() || !onPage(e) || e.key === 'Escape') return;   // Esc still closes boxes / exits the tool
+    e.preventDefault(); e.stopPropagation();
+  }, true);
 
   // ── Close on Escape ──
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      // Esc with a box open closes just the box. Leaving the mode as well made the
+      // next click on a button follow its link, which jumped reviewers off the spot.
+      if (document.querySelector('.comment-popover, .comment-detail')) { closeAllPopovers(); return; }
       closeAllPopovers();
       if (drawMode) deactivateDraw();
       if (commentMode) deactivateComment();
@@ -1011,17 +1234,27 @@
   }
 
   // Optimistically remove the stroke locally, then delete it on the server by id.
+  const erasing = new Set();   // ids mid-delete: a refresh must not bring them back
   async function eraseStroke(s) {
     if (!s) return;
-    const id = s.id;
+    let id = s.id;
     strokes = strokes.filter(x => x !== s);
     if (hoveredStroke === s) hoveredStroke = null;
     redrawAll();
-    if (!id) return; // not yet saved server-side; local removal is enough
+    if (!id && s._saving) { await s._saving; }   // still saving: let it land, then delete it
+    if (!s.id) return;                             // never saved; local removal is enough
+    id = s.id;
+    erasing.add(id);
     try {
-      await fetch(strokesDelete(id), { method: 'DELETE' });
+      const res = await serial(() => send(strokesDelete(id), { method: 'DELETE' }));
+      if (!res.ok) throw new Error('DELETE stroke ' + res.status);
     } catch (err) {
       console.error('Failed to delete stroke:', err);
+      strokes.push(s);
+      redrawAll();
+      figToast('That drawing could not be erased. Please try again.');
+    } finally {
+      erasing.delete(id);
     }
   }
 
@@ -1079,28 +1312,34 @@
 
     const author = getAuthor() || 'Anonymous';
     const stroke = {
+      id: undefined,          // set once saved; the request carries clientId so retries can't duplicate it
+      clientId: genId(),
       points: currentStroke,
       color: drawColor,
       width: drawWidth,
       author
     };
 
-    // Save to server
+    // Show it right away, then save; on failure take it back off and say so.
+    strokes.push(stroke);
+    currentStroke = [];
+    let done; stroke._saving = new Promise(r => { done = r; });
     try {
-      const res = await fetch(STROKES_API, {
+      const res = await serial(() => send(STROKES_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...stroke, version: VERSION })
-      });
-      if (res.ok) {
-        const saved = await res.json();
-        strokes.push(saved);
-      }
+        body: JSON.stringify({ id: stroke.clientId, points: stroke.points, color: stroke.color, width: stroke.width, author: stroke.author, version: VERSION })
+      }));
+      if (!res.ok) throw new Error('POST stroke ' + res.status);
+      Object.assign(stroke, await res.json());
     } catch (err) {
       console.error('Failed to save stroke:', err);
+      strokes = strokes.filter(x => x !== stroke);
+      redrawAll();
+      figToast('That drawing did not save. Please draw it again.');
+    } finally {
+      done(); delete stroke._saving;
     }
-
-    currentStroke = [];
   }
 
   // ── Color picker ──
@@ -1172,91 +1411,219 @@
     clearBtn.textContent = 'Clear';
     clearBtn.addEventListener('click', async (e) => {
       e.stopPropagation();
+      // Team pages: Clear removes only this reviewer's drawings, never everyone's.
+      if (document.body.getAttribute('data-fig-clear') === 'mine') {
+        const author = getAuthor();
+        const own = strokes.filter(x => x.author === author);
+        for (const x of own) await eraseStroke(x);
+        return;
+      }
       try {
-        await fetch(strokesClearAll(), { method: 'DELETE' });
+        const res = await serial(() => send(strokesClearAll(), { method: 'DELETE' }));
+        if (!res.ok) throw new Error('DELETE strokes ' + res.status);
         strokes = [];
         redrawAll();
       } catch (err) {
         console.error('Failed to clear strokes:', err);
+        figToast('Drawings could not be cleared. Please try again.');
       }
     });
     picker.appendChild(clearBtn);
   }
 
-  // ── Load strokes on page load ──
+  // ── Load strokes on page load, then keep them in sync ──
+  // Strokes still being saved (no server id yet) stay on screen across refreshes.
+  async function refreshStrokes() {
+    const res = await fetch(strokesGet(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('GET strokes ' + res.status);
+    const list = await res.json();
+    if (!Array.isArray(list) || drawing) return;
+    // Still-saving strokes stay, unless the server already has them (same id).
+    const pending = strokes.filter(x => !x.id && !list.some(l => l.id === x.clientId));
+    const before = strokes.map(x => x.id).join();
+    strokes = list.filter(x => !erasing.has(x.id) && !clearedHere(x)).concat(pending);
+    if (strokes.map(x => x.id).join() !== before) redrawAll();
+  }
   async function loadStrokes() {
-    try {
-      const res = await fetch(strokesGet());
-      if (!res.ok) return;
-      strokes = await res.json();
-      redrawAll();
-    } catch (err) {
-      console.error('Failed to load strokes:', err);
-    }
+    try { await refreshStrokes(); }
+    catch (err) { console.error('Failed to load strokes:', err); }
   }
 
-  // ── Load comments on page load ──
-  // Strategy: GET from API, MERGE with local cache + pending queue.
-  // Never destructively replace — comments only get added to the union.
-  async function loadComments() {
-    var apiComments = [];
-    try {
-      var res = await fetch(apiGet());
-      if (res.ok) apiComments = await res.json();
-    } catch (err) {
-      console.error('Failed to load comments from API:', err);
-    }
-
-    var localCache = restoreFromLocal();
+  // ── Load + live sync ──
+  // What a browser shows = the server's list, with this browser's own
+  // unacknowledged writes laid on top (pending creates added, pending edits
+  // applied, pending deletes removed). Nothing else from local storage is ever
+  // shown while the server is reachable, so stale copies can't resurrect.
+  function viewFromServer(serverList) {
     var pendingPosts = lsGet(LS_QUEUE_POST);
-    var pendingDeletes = lsGet(LS_QUEUE_DELETE);
-
-    // Merge API + local cache + pending posts (by id, idempotent)
-    var merged = mergeById(apiComments, localCache);
-    merged = mergeById(merged, pendingPosts);
-
-    // Filter out anything in the delete queue
-    var deleteSet = new Set(pendingDeletes.map(function(d) { return d.id; }));
-    merged = merged.filter(function(c) { return !deleteSet.has(c.id); });
-
-    comments = merged;
-    backupToLocal();
-    comments.forEach(function(c, i) {
-      if (c.kind === 'suggest') renderSuggestion(c);
-      else renderPin(c, i + 1);
+    var patches = new Map(lsGet(LS_QUEUE_PATCH).map(function(p) { return [p.id, p]; }));
+    var deleted = new Set(lsGet(LS_QUEUE_DELETE).map(function(d) { return d.id; }));
+    var view = serverList.map(function(c) {
+      var p = patches.get(c.id);
+      if (!p) return c;
+      var merged = Object.assign({}, c);
+      ['x', 'y', 'text', 'status', 'diagnosis'].forEach(function(k) { if (p[k] != null) merged[k] = p[k]; });
+      return merged;
     });
+    var have = new Set(view.map(function(c) { return c.id; }));
+    pendingPosts.forEach(function(c) { if (!have.has(c.id)) view.push(c); });
+    return view
+      .filter(function(c) { return !deleted.has(c.id) && !clearedHere(c); })
+      .sort(function(a, b) { return (a.timestamp || 0) - (b.timestamp || 0); });
+  }
 
-    // Flush any pending operations to the API now that we're loaded
+  function fingerprint(c) {
+    return JSON.stringify([c.x, c.y, c.text, c.status, c.diagnosis, c.anchor, c.replies || []]);
+  }
+  function removeRendered(id) {
+    unwrapSuggestion(id);
+    document.querySelectorAll('.comment-pin[data-comment-id="' + id + '"]').forEach(function(p) { p.remove(); });
+  }
+  function renderOne(c) {
+    if (c.kind === 'suggest') renderSuggestion(c);
+    else renderPin(c, 0);
+  }
+  // Bring the page in line with `next`: remove what's gone, re-render what
+  // changed, add what's new. Pins are renumbered at the end.
+  function reconcile(next) {
+    var nextById = new Map(next.map(function(c) { return [c.id, c]; }));
+    var curById = new Map(comments.map(function(c) { return [c.id, c]; }));
+    comments.forEach(function(c) { if (!nextById.has(c.id)) removeRendered(c.id); });
+    next.forEach(function(c) {
+      var cur = curById.get(c.id);
+      if (!cur) { renderOne(c); return; }
+      if (fingerprint(cur) !== fingerprint(c)) { removeRendered(c.id); renderOne(c); }
+    });
+    comments = next;
+    backupToLocal();
+    renumberPins();
+  }
+
+  async function fetchServerComments() {
+    var res = await fetch(apiGet(), { cache: 'no-store' });
+    if (!res.ok) throw new Error('GET comments ' + res.status);
+    var list = await res.json();
+    if (!Array.isArray(list)) throw new Error('GET comments: not a list');
+    return list;
+  }
+
+  async function loadComments() {
+    try {
+      reconcile(viewFromServer(await fetchServerComments()));
+    } catch (err) {
+      // Offline or server error: show this browser's last known state until the next sync.
+      console.error('Failed to load comments from API:', err);
+      reconcile(mergeById(restoreFromLocal(), lsGet(LS_QUEUE_POST)).filter(function(c) {
+        return !lsGet(LS_QUEUE_DELETE).some(function(d) { return d.id === c.id; });
+      }));
+    }
     flushQueues();
   }
+
+  // Never redraw under someone mid-action: an open box, a pin or stroke being
+  // dragged, or a text selection in progress. The next tick picks it up.
+  function busy() {
+    return !!(document.querySelector('.comment-popover, .comment-detail, .author-overlay') ||
+      dragState || drawing || dragSel);
+  }
+  var syncing = false;
+  async function refresh() {
+    if (syncing || document.hidden || busy()) return;
+    syncing = true;
+    try {
+      await flushQueues();
+      if (pendingClears().length) await runPendingClears();
+      var serverComments = await fetchServerComments();
+      if (!busy()) reconcile(viewFromServer(serverComments));
+      await refreshStrokes();
+    } catch (err) {
+      console.warn('fig sync:', err.message || err);
+    } finally {
+      syncing = false;
+    }
+  }
+  setInterval(refresh, 8000);
+  window.addEventListener('focus', refresh);
+  document.addEventListener('visibilitychange', function() { if (!document.hidden) refresh(); });
 
   // ── Delete own markings only (team pages: body[data-fig-clear="mine"]) ──
   // One reviewer must not be able to wipe everyone's feedback: the trash
   // button on multi-reviewer pages clears only the clicker's comments,
   // suggestions, and strokes (matched by their stored author name).
+  // ── Trash: delete everything this reviewer posted, on every page of the site ──
+  // One server request clears it all in a single commit (api/clear). The
+  // request is remembered in localStorage until the server confirms, so a
+  // refresh, a closed tab, or a dropped connection can't leave half of it
+  // behind: every page load hides those items and sends the request again.
+  var LS_PENDING_CLEAR = 'fig-pending-clear';
+  var CLEAR_API = API.replace(/comments$/, 'clear');
+  function pendingClears() { return lsGet(LS_PENDING_CLEAR); }
+  function clearedHere(x) {
+    return pendingClears().some(function(pc) {
+      return pc.author === x.author && pc.versions.indexOf(VERSION) >= 0 && (Number(x.timestamp) || 0) <= pc.before;
+    });
+  }
+  var clearing = false;
+  async function runPendingClears() {
+    if (clearing) return;
+    clearing = true;
+    try {
+      var list = pendingClears();
+      for (var i = 0; i < list.length; i++) {
+        var pc = list[i];
+        var res = await serial(function() {
+          return send(CLEAR_API, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ author: pc.author, versions: pc.versions, before: pc.before })
+          });
+        });
+        if (res.ok) {
+          lsSet(LS_PENDING_CLEAR, pendingClears().filter(function(x) { return x.id !== pc.id; }));
+        }
+      }
+    } catch (err) {
+      console.warn('fig clear:', err.message || err);
+    } finally {
+      clearing = false;
+    }
+  }
+
   async function clearMine() {
     var author = getAuthor();
-    var own = comments.filter(function(c) { return c.author === author; });
-    var ownStrokes = strokes.filter(function(s) { return s.author === author; });
-    if (!author || (!own.length && !ownStrokes.length)) {
-      alert('No feedback of yours on this page yet.');
-      return;
-    }
-    if (!confirm('Deletes all of your feedback. Are you sure?')) return;
-    own.forEach(function(c) {
-      queueAdd(LS_QUEUE_DELETE, { id: c.id });
-      queueRemove(LS_QUEUE_POST, c.id);
-      queueRemove(LS_QUEUE_PATCH, c.id);
-      syncDelete(c.id);
-      if (c.kind === 'suggest') unwrapSuggestion(c.id);
-      var pin = document.querySelector('.comment-pin[data-comment-id="' + c.id + '"]');
-      if (pin) pin.remove();
+    if (!author) { alert('No feedback of yours on this site yet.'); return; }
+    var siteVersions = (document.body.getAttribute('data-fig-site') || '')
+      .split(',').map(function(v) { return v.trim(); })
+      .filter(function(v) { return v && v !== VERSION; });
+    var versions = [VERSION].concat(siteVersions);
+    if (!confirm('Deletes all of your feedback (comments, suggestions and drawings) on '
+      + (siteVersions.length ? 'every page of this site' : 'this page') + '. Are you sure?')) return;
+
+    // Remember the request first, so nothing below can be lost to a refresh.
+    // `before` allows for clock differences between this computer and the server.
+    var pc = { id: genId(), author: author, versions: versions, before: Date.now() + 15000 };
+    lsSet(LS_PENDING_CLEAR, pendingClears().concat([pc]));
+
+    // Unsent writes of mine, on every page, are cancelled outright.
+    versions.forEach(function(v) {
+      var notMine = function(x) { return x.author !== author; };
+      lsSet('fig-queue-post-' + v, lsGet('fig-queue-post-' + v).filter(notMine));
+      lsSet('fig-cache-' + v, lsGet('fig-cache-' + v).filter(notMine));
+      if (v !== VERSION) lsSet('fig-queue-patch-' + v, []);
     });
-    comments = comments.filter(function(c) { return c.author !== author; });
-    backupToLocal();
-    renumberPins();
+
+    // Everything of mine leaves this screen at once.
     closeAllPopovers();
-    for (var i = ownStrokes.length - 1; i >= 0; i--) { await eraseStroke(ownStrokes[i]); }
+    reconcile(comments.filter(function(c) { return !clearedHere(c); }));
+    strokes = strokes.filter(function(x) { return !clearedHere(x) && !(x.author === author && !x.id); });
+    hoveredStroke = null;
+    redrawAll();
+
+    await runPendingClears();
+    if (pendingClears().some(function(x) { return x.id === pc.id; })) {
+      figToast('Still deleting your feedback. It is hidden now and will finish automatically.');
+    }
+    refresh();
   }
 
   // ── Delete all comments (with confirmation) ──
@@ -1272,9 +1639,7 @@
 
     // Clear locally first
     document.querySelectorAll('.comment-pin').forEach(function(p) { p.remove(); });
-    document.querySelectorAll('mark.fig-suggest').forEach(function(m) {
-      var par = m.parentNode; while (m.firstChild) par.insertBefore(m.firstChild, m); par.removeChild(m); par.normalize();
-    });
+    document.querySelectorAll('mark.fig-suggest').forEach(unwrapMark);
     closeAllPopovers();
     comments = [];
     backupToLocal();
@@ -1282,11 +1647,13 @@
     lsSet(LS_QUEUE_PATCH, []);
     lsSet(LS_QUEUE_DELETE, []);
 
-    // Then sync to server
+    // Then sync to server (after any writes still in flight)
     try {
-      await fetch(apiClearAll(), { method: 'DELETE' });
+      const res = await serial(() => send(apiClearAll(), { method: 'DELETE' }));
+      if (!res.ok) throw new Error('DELETE all ' + res.status);
     } catch (err) {
       console.warn('Server clear-all failed:', err);
+      figToast('Comments could not be cleared on the server. Please try again.');
     }
   }
 
@@ -1348,4 +1715,5 @@
 
   loadComments();
   loadStrokes();
+  if (pendingClears().length) runPendingClears().then(refresh);
 })();

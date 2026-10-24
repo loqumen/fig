@@ -122,10 +122,16 @@ async function main() {
   // Hand the source PDF to the overlay's dispatch.
   window.__figPDF = { src: entry.src, b64: entry.b64, name: entry.name };
 
-  // Load the Fig overlay (classic script; auto-activates).
-  const s = document.createElement("script");
-  s.src = chrome.runtime.getURL("fig-overlay.js");
-  document.body.appendChild(s);
+  // Load the /fig tools in order (classic scripts; the last one starts them).
+  for (const f of ["fig-ui/review-core.js", "fig-local-api.js", "fig-ui/toolbar.js", "fig-ui/fig-comments.js", "fig-ext.js"]) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = chrome.runtime.getURL(f);
+      s.onload = resolve;
+      s.onerror = () => reject(new Error("could not load " + f));
+      document.body.appendChild(s);
+    });
+  }
 }
 
 main().catch((e) => { loadingEl.textContent = "Could not render PDF: " + e.message; });

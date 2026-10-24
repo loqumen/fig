@@ -154,7 +154,10 @@ for required in \
   "Fig Companion.app/Contents/Resources/payload/extension-ids.txt" \
   "extension/manifest.json" \
   "extension/background.js" \
-  "extension/fig-overlay.js" \
+  "extension/fig-ext.js" \
+  "extension/fig-local-api.js" \
+  "extension/fig-ui/fig-comments.js" \
+  "extension/fig-ui/fig-ui.css" \
   "INSTALL.html" \
   "LICENSE" \
   "Applications" ; do

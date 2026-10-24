@@ -1,5 +1,5 @@
 #!/bin/bash
-# Headless UI test for the fig overlay (comment/reply/highlight/persistence).
+# Headless UI test for the extension's /fig tools (ext-ui.html).
 # Deterministic: dumps the DOM after a virtual-time budget, greps #results.
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -8,8 +8,8 @@ BRAVE="/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"
 if [ -z "$BRAVE" ]; then echo "no chromium-family browser found"; exit 2; fi
 
 OUT="$("$BRAVE" --headless --disable-gpu --allow-file-access-from-files \
-  --dump-dom --virtual-time-budget=16000 \
-  "file://$DIR/overlay-ui.html" 2>/dev/null)"
+  --dump-dom --virtual-time-budget=30000 \
+  "file://$DIR/ext-ui.html" 2>/dev/null)"
 
 RESULTS="$(printf '%s' "$OUT" | sed -n 's/.*<pre id="results">//p' | sed 's/<\/pre>.*//')"
 # sed one-liner fails on multi-line pre; extract with python instead.

@@ -3,58 +3,62 @@
 <head>
 <meta charset="utf-8">
 <style>
+  @font-face { font-family: 'DM Sans'; src: url('vendor/dm-sans-var-latin.woff2') format('woff2'); font-weight: 300 500; }
   body {
-    font-family: system-ui, -apple-system, sans-serif;
+    font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
     background: #fafaf8;
     color: #1a1a1a;
-    width: 260px;
+    width: 300px;
     margin: 0;
     padding: 14px;
     font-size: 13px;
+    font-weight: 400;
+    font-variant-numeric: tabular-nums;
   }
-  h1 { font-size: 14px; font-weight: 600; margin: 0 0 8px; }
+  h1 { font-size: 14px; font-weight: 500; margin: 0 0 8px; }
+  h2 { font-size: 11px; font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; color: #9a9790; margin: 16px 0 6px; }
   p { margin: 0 0 10px; color: #4a4a46; line-height: 1.5; }
-  label { display: block; margin-bottom: 4px; color: #4a4a46; }
-  input {
-    width: 100%;
-    box-sizing: border-box;
-    border: 1px solid #e8e6e1;
-    border-radius: 6px;
-    padding: 6px 8px;
-    font: inherit;
-  }
-  /* Flat fill, no outline; DM Sans 500 sentence case, matching every other
-     Fig button. */
+  /* Flat fill, no outline; DM Sans 500 sentence case, matching every other Fig button. */
   button {
-    margin-top: 8px;
-    width: 100%;
-    border: none;
-    background: #1a1a1a;
-    color: #fafaf8;
-    border-radius: 6px;
-    padding: 7px 12px;
-    font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
-    font-size: 13px;
-    font-weight: 500;
-    text-transform: none;
-    cursor: pointer;
+    margin-top: 8px; width: 100%; border: none; background: #1a1a1a; color: #fafaf8; border-radius: 6px;
+    padding: 7px 12px; font-family: inherit; font-size: 13px; font-weight: 500; text-transform: none; cursor: pointer;
   }
+  button.quiet { background: #e8e6e1; color: #1a1a1a; }
+  button:disabled { opacity: 0.55; cursor: default; }
+  select { width: 100%; box-sizing: border-box; border: 1px solid #e8e6e1; border-radius: 6px; padding: 5px 6px; font: inherit; background: #fff; }
+  .row { display: grid; grid-template-columns: 70px 1fr; align-items: center; gap: 8px; margin-top: 6px; color: #4a4a46; }
+  .toggle { display: flex; gap: 8px; align-items: flex-start; margin-top: 6px; color: #1a1a1a; }
+  .toggle em { display: block; font-style: normal; color: #9a9790; font-size: 12px; line-height: 1.4; }
+  .hint { color: #9a9790; font-size: 12px; line-height: 1.4; margin-top: 4px; }
   .status { margin-top: 8px; color: #4a4a46; }
   .conn { display: flex; align-items: center; gap: 6px; margin-top: 10px; color: #4a4a46; }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: #d4d2cc; flex: none; }
   .dot.ok { background: #2C9F28; }
   .dot.bad { background: #916031; }
-  .conn a { color: #1a1a1a; }
+  .figs { max-height: 220px; overflow-y: auto; margin: 0 -4px; }
+  .fig-row { padding: 6px 4px; border-radius: 6px; cursor: pointer; }
+  .fig-row + .fig-row { border-top: 1px solid #e8e6e1; }
+  .fig-row b { display: block; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .fig-row span { color: #9a9790; font-size: 12px; }
+  .fig-row .gen { color: #2C9F28; }
+  .fig-row .err { color: #916031; }
+  @media (hover: hover) and (pointer: fine) { .fig-row:hover b { color: #2C9F28; } }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
   <h1>Fig</h1>
-  <p>Press <b>⌥ Option+Shift+F</b> on any page to open the tools. The companion must be running locally.</p>
+  <p>Press <b>⌥ Option+Shift+F</b> on any page or PDF to open the tools. Mark it up, then press the green Fig button.</p>
   <button id="open">Open Fig on this page</button>
-  <div class="conn" id="conn"><span class="dot" id="dot"></span><span id="connText">Checking companion…</span></div>
-  <div class="conn" id="embedRow"><span class="dot" id="embedDot"></span><span id="embedText">Checking embedded content…</span></div>
-  <button id="grantEmbed" hidden>Allow Fig inside embedded content</button>
+  <div class="conn"><span class="dot" id="dot"></span><span id="connText">Checking the companion…</span></div>
   <div class="status" id="status"></div>
-  <script src="popup.js"></script>
+
+  <h2>Your figs</h2>
+  <div class="figs" id="figs"><p>Loading…</p></div>
+
+  <h2>Settings</h2>
+  <div id="settings"><p>Loading…</p></div>
+
+<script src="popup.js"></script>
 </body>
 </html>
