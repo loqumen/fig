@@ -50,7 +50,7 @@ Browser PDF viewers are sealed plugins, so on a `.pdf` URL Fig grabs the documen
 
 A signed macOS package is coming to the [products page](https://loqumen.com/products). Until then:
 
-1. Companion: `node companion/figd.js`. It prints its access token on start.
+1. Companion: `installer/install-on-demand.sh`. It registers the browser connection and a LaunchAgent that starts the companion only when Fig needs it and stops it after 30 idle minutes (`--remove` undoes it). To run it by hand instead: `node companion/figd.js`.
 2. Extension: open `brave://extensions` (or `chrome://extensions`), enable Developer mode, choose Load unpacked, and select the `extension/` folder.
 3. The extension reaches the companion through its native messaging host, which the companion installs.
 
