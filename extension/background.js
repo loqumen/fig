@@ -47,6 +47,15 @@ async function openPdfViewer(tab) {
   await chrome.tabs.update(tab.id, { url: chrome.runtime.getURL("viewer.html") + "?key=" + encodeURIComponent(key) });
 }
 
+// The /fig tools, in load order: the review core, the local store that answers the
+// overlay's API calls, the toolbar markup, the /fig overlay, and the extension's page
+// script (which starts everything, or toggles it on a second press).
+const FIG_FILES = ["fig-ui/review-core.js", "fig-local-api.js", "fig-ui/toolbar.js", "fig-ui/fig-comments.js", "fig-ext.js"];
+async function injectFig(tabId) {
+  await chrome.scripting.insertCSS({ target: { tabId }, files: ["fig-ui/fig-ui.css"] });
+  await chrome.scripting.executeScript({ target: { tabId }, files: FIG_FILES });
+}
+
 async function toggleFig(tab) {
   if (!tab || !tab.id) return;
   // No URL pre-guard: the url is invisible without host access (empty string
@@ -56,27 +65,12 @@ async function toggleFig(tab) {
   // failing silently.
   if (tab.url && isPdfUrl(tab.url)) { await openPdfViewer(tab); return; }
   try {
-    // Inject into EVERY frame, not just the top one. A Claude artifact, a
-    // Figma embed, a docs preview — the thing worth annotating often lives
-    // in a cross-origin iframe, and a top-frame-only overlay can neither
-    // see its text nor receive its clicks (2026-08-05). Child frames run
-    // the same file in "child mode": no toolbar, they mirror the top
-    // frame's tool and hand their markings back at dispatch.
-    // Same-origin frames come with activeTab; cross-origin ones need the
-    // optional <all_urls> grant (the popup's embedded-content toggle).
-    await chrome.scripting.insertCSS({ target: { tabId: tab.id, allFrames: true }, files: ["fig-overlay.css"] });
-    await chrome.scripting.executeScript({ target: { tabId: tab.id, allFrames: true }, files: ["fig-overlay.js"] });
-    // fig-overlay.js defines window.__figToggle and calls it on (re)injection.
+    // The /fig review tools (fig-ui/, built from the /fig templates) plus the Fig
+    // button, in the top frame. Marking up inside embedded frames is not supported
+    // in this version; the page the frame sits in is what gets marked up.
+    await injectFig(tab.id);
     chrome.action.setBadgeText({ tabId: tab.id, text: "" });
   } catch (e) {
-    // allFrames can fail wholesale on some pages; the top frame alone is
-    // still worth having, so fall back before reporting failure.
-    try {
-      await chrome.scripting.insertCSS({ target: { tabId: tab.id }, files: ["fig-overlay.css"] });
-      await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["fig-overlay.js"] });
-      chrome.action.setBadgeText({ tabId: tab.id, text: "" });
-      return;
-    } catch { /* fall through to the honest badge below */ }
     chrome.action.setBadgeText({ tabId: tab.id, text: "!" });
     chrome.action.setBadgeBackgroundColor({ color: "#8a3b2e" });
     chrome.action.setTitle({ tabId: tab.id, title: "Fig can't run on this page: " + ((e && e.message) || e) });

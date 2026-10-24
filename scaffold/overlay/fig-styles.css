@@ -359,9 +359,8 @@ body.draw-mode .fig-draw-canvas {
   border-radius: 50%;
   background: #FF1493;
   color: #fff;
-  font-family: 'DM Sans', Inter, system-ui, sans-serif;
   font-size: 12px;
-  font-weight: 500;
+  font-weight: 700;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -478,10 +477,8 @@ body.draw-mode .fig-draw-canvas {
   background: #00C3FF;
   border: none;
   color: #fff;
-  font-family: 'DM Sans', Inter, system-ui, sans-serif;
   font-size: 11px;
-  font-weight: 500;
-  text-transform: none;
+  font-weight: 600;
   padding: 3px 12px;
   border-radius: 4px;
   cursor: pointer;
@@ -491,10 +488,7 @@ body.draw-mode .fig-draw-canvas {
   background: none;
   border: 1px solid #555;
   color: #888;
-  font-family: 'DM Sans', Inter, system-ui, sans-serif;
   font-size: 11px;
-  font-weight: 500;
-  text-transform: none;
   padding: 3px 10px;
   border-radius: 4px;
   cursor: pointer;
@@ -543,10 +537,8 @@ body.draw-mode .fig-draw-canvas {
   border: none;
   border-radius: 4px;
   padding: 8px 24px;
-  font-family: 'DM Sans', Inter, system-ui, sans-serif;
   font-size: 14px;
-  font-weight: 500;
-  text-transform: none;
+  font-weight: 600;
   cursor: pointer;
 }
 .author-dialog button:hover { background: #00a8e6; }
@@ -556,7 +548,19 @@ body.draw-mode .fig-draw-canvas {
    ───────────────────────────────────────────────────────────── */
 .suggest-toggle { background: #C9971B; }
 .suggest-toggle.active { background: #e06060; }
-body.suggest-mode main, body.suggest-mode main * { cursor: text; }
+body.suggest-mode, body.suggest-mode * { cursor: text; }
+body.suggest-mode ::selection { background: rgba(245, 200, 66, 0.55); color: inherit; }
+.fig-pending-hl { position: absolute; top: 0; left: 0; width: 0; height: 0; z-index: 8999; pointer-events: none; }
+.fig-pending-hl.is-fixed { position: fixed; z-index: 10001; }
+.fig-pending-hl span { position: absolute; background: rgba(245, 200, 66, 0.55); border-radius: 2px; }
+body.suggest-mode a, body.suggest-mode button, body.suggest-mode [role="button"], body.suggest-mode label {
+  -webkit-user-select: text; user-select: text; -webkit-user-drag: none;
+}
+body.suggest-mode .fig-toolbar, body.suggest-mode .fig-toolbar *,
+body.suggest-mode .comment-popover, body.suggest-mode .comment-popover *,
+body.suggest-mode .comment-detail, body.suggest-mode .comment-detail * { cursor: auto; }
+body.suggest-mode .fig-btn, body.suggest-mode .comment-detail button { cursor: pointer; }
+body.suggest-mode .comment-popover textarea, body.suggest-mode .comment-detail textarea { cursor: text; }
 
 mark.fig-suggest {
   background: rgba(245, 200, 66, 0.40);
@@ -590,11 +594,7 @@ mark.fig-suggest[data-status="rejected"] { background: rgba(150,150,150,0.20); b
 }
 .suggest-diagnosis-label { font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: #7d828c; margin-bottom: 3px; }
 .suggest-approve-row { display: flex; gap: 8px; margin-bottom: 6px; }
-.suggest-approve, .suggest-reject {
-  flex: 1; border: none; border-radius: 6px; padding: 6px 8px;
-  font-family: 'DM Sans', Inter, system-ui, sans-serif;
-  font-size: 12px; font-weight: 500; text-transform: none; cursor: pointer; color: #fff;
-}
+.suggest-approve, .suggest-reject { flex: 1; border: none; border-radius: 6px; padding: 6px 8px; font-size: 12px; font-weight: 600; cursor: pointer; color: #fff; }
 .suggest-approve { background: #2EA043; } .suggest-approve:hover { background: #278a39; }
 .suggest-reject { background: #3a3d44; } .suggest-reject:hover { background: #4a4e57; }
 
@@ -655,3 +655,103 @@ mark.fig-suggest[data-status="rejected"] { background: rgba(150,150,150,0.20); b
 .fig-onboard-desc { font-size: 12.5px; font-weight: 300; line-height: 1.5; color: #9a9790; }
 .fig-onboard-done { width: 100%; background: #1a1a1a; color: #fafaf8; border: none; border-radius: 10px; padding: 10px; font-family: inherit; font-size: 13px; font-weight: 400; letter-spacing: .02em; cursor: pointer; transition: background .15s; }
 .fig-onboard-done:hover { background: #000; }
+
+/* ─────────────────────────────────────────────────────────────
+   Loqumen-styled cards, inputs and buttons (standard /fig)
+   Name prompt, comment/suggest popovers, comment detail, replies.
+   Pins and the draw palette keep their hot pink.
+   ───────────────────────────────────────────────────────────── */
+.author-overlay { background: rgba(26,26,26,0.32); }
+.author-dialog,
+.comment-popover,
+.comment-detail {
+  background: #fafaf8; border: 1px solid #e8e6e1; border-radius: 16px;
+  box-shadow: 0 12px 40px rgba(26,26,26,0.18);
+  font-family: 'DM Sans', -apple-system, system-ui, sans-serif; color: #4a4a46;
+}
+.comment-popover, .comment-detail { padding: 16px; }
+.author-dialog { padding: 22px; text-align: left; }
+.author-dialog h3 { color: #1a1a1a; font-size: 16px; font-weight: 500; letter-spacing: -.01em; margin: 0 0 14px; }
+
+.author-dialog input,
+.comment-popover-input,
+.comment-edit-input {
+  background: #fff; color: #1a1a1a; border: 1px solid #e8e6e1; border-radius: 10px;
+  padding: 10px 12px; font-family: inherit; font-size: 13px; font-weight: 400;
+  transition: border-color .15s;
+}
+.author-dialog input { font-size: 14px; margin-bottom: 14px; }
+.author-dialog input:focus,
+.comment-popover-input:focus,
+.comment-edit-input:focus { border-color: #1a1a1a; }
+.author-dialog input::placeholder,
+.comment-popover-input::placeholder,
+.comment-edit-input::placeholder { color: #74726d; }
+.comment-popover-hint { color: #74726d; font-size: 11.5px; margin-top: 8px; }
+
+.author-dialog button,
+.comment-edit-save {
+  background: #1a1a1a; color: #fafaf8; border: none; border-radius: 10px;
+  font-family: inherit; font-weight: 400; letter-spacing: .02em; cursor: pointer; transition: background .15s;
+}
+.author-dialog button { width: 100%; padding: 10px; font-size: 13px; }
+.author-dialog button:hover,
+.comment-edit-save:hover { background: #2b2b29; }
+.comment-detail-edit,
+.comment-edit-cancel,
+.comment-detail-delete {
+  background: transparent; border: 1px solid #e8e6e1; color: #4a4a46; border-radius: 8px;
+  font-family: inherit; font-size: 12px; padding: 5px 12px; cursor: pointer; transition: background .15s, border-color .15s;
+}
+.comment-edit-save { font-size: 12px; padding: 5px 14px; }
+.comment-detail-edit:hover,
+.comment-edit-cancel:hover { background: #f0eee9; border-color: #d4d2cc; color: #1a1a1a; }
+.comment-detail-delete { color: #8a3b2e; }
+.comment-detail-delete:hover { background: #f3e7e4; border-color: #e6cfc9; }
+
+.comment-detail-text { color: #1a1a1a; font-size: 14px; line-height: 1.5; }
+.comment-detail-meta { color: #74726d; font-size: 11.5px; }
+.comment-detail-meta strong { color: #4a4a46; font-weight: 500; }
+.comment-detail-actions { margin-top: 12px; }
+
+.fig-replies { margin-top: 12px; border-top: 1px solid #e8e6e1; padding-top: 10px; }
+.fig-reply { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.fig-reply-text { color: #1a1a1a; font-size: 13px; line-height: 1.45; }
+.fig-reply-meta { color: #74726d; font-size: 11px; margin-top: 2px; }
+.fig-reply-meta strong { color: #4a4a46; font-weight: 500; }
+.reply-delete-btn { background: none; border: none; color: #74726d; font-size: 16px; line-height: 1; padding: 0 2px; cursor: pointer; flex-shrink: 0; }
+.reply-delete-btn:hover { color: #8a3b2e; }
+
+.suggest-popover .suggest-quote,
+.suggest-detail-quote {
+  color: #4a4a46; background: #f0eee9; border-left: none; border-radius: 8px;
+  padding: 8px 10px; font-size: 12.5px; margin-bottom: 10px;
+}
+.suggest-status-badge { font-weight: 500; letter-spacing: .04em; }
+.st-open { background: #f0eee9; color: #4a4a46; }
+.st-diagnosed { background: #e7eef8; color: #1d4f8f; }
+.st-approved { background: #e6f2e8; color: #1f6a32; }
+.st-applied { background: #1a1a1a; color: #fafaf8; }
+.st-rejected { background: #f3e7e4; color: #8a3b2e; }
+.suggest-orphan { color: #7a5c12; }
+.suggest-diagnosis { background: #fff; border: 1px solid #e8e6e1; border-radius: 10px; color: #1a1a1a; }
+.suggest-diagnosis-label { color: #74726d; }
+.suggest-approve, .suggest-reject { border-radius: 10px; font-family: inherit; font-weight: 400; }
+.suggest-approve { background: #1a1a1a; color: #fafaf8; }
+.suggest-approve:hover { background: #2b2b29; }
+.suggest-reject { background: transparent; color: #4a4a46; border: 1px solid #e8e6e1; }
+.suggest-reject:hover { background: #f0eee9; color: #1a1a1a; }
+
+/* Reduced motion: keep the colour and opacity fades, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .fig-onboard, .fig-onboard.visible { transform: none; transition: opacity .25s ease; }
+  .comment-pin, .comment-pin:hover { transition: none; transform: translate(-50%, -50%); }
+}
+
+/* Failed-write notice */
+.fig-toast {
+  position: fixed; left: 50%; bottom: 96px; transform: translateX(-50%); z-index: 10002;
+  max-width: calc(100vw - 32px); background: #1a1a1a; color: #fafaf8;
+  border-radius: 10px; padding: 10px 16px; box-shadow: 0 12px 40px rgba(26,26,26,0.25);
+  font: 400 13px/1.45 'DM Sans', -apple-system, system-ui, sans-serif;
+}
