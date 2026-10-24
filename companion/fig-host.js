@@ -14,6 +14,35 @@ const http = require("http");
 const SETTINGS = path.join(os.homedir(), ".fig", "settings.json");
 const PORT = Number(process.env.FIG_PORT) || 41414; // env override is for tests only
 
+// Start on demand. When the companion isn't listening, ask launchd to start it
+// (the on-demand agent from installer/install-on-demand.sh, or the app's agent).
+// launchd starts it, not this process: anything this host spawns directly inherits
+// the browser's provenance, and macOS then quarantines what the companion downloads.
+const net = require("net");
+const { execFile } = require("child_process");
+const AGENTS = ["com.loqumen.figd.ondemand", "com.loqumen.figd"];
+function portOpen() {
+  return new Promise((resolve) => {
+    const s = net.connect(PORT, "127.0.0.1");
+    s.on("connect", () => { s.destroy(); resolve(true); });
+    s.on("error", () => resolve(false));
+  });
+}
+async function ensureCompanion() {
+  if (await portOpen()) return true;
+  const uid = process.getuid();
+  for (const label of AGENTS) execFile("launchctl", ["kickstart", `gui/${uid}/${label}`], () => {});
+  for (let i = 0; i < 50; i++) {
+    await new Promise((r) => setTimeout(r, 200));
+    if (await portOpen()) return true;
+  }
+  return false;
+}
+const companion = (fn) => async (...args) => {
+  if (!(await ensureCompanion())) return { ok: false, data: { error: "the companion did not start (see ~/.fig/figd.log)" } };
+  return fn(...args);
+};
+
 function send(obj) {
   const buf = Buffer.from(JSON.stringify(obj), "utf8");
   const len = Buffer.alloc(4);
@@ -184,11 +213,11 @@ process.stdin.on("data", async (chunk) => {
     if (msg && msg.type === "ping") { send({ ok: true, data: { pong: true } }); continue; }
     if (msg && msg.type === "settings-get") { send(settingsGet()); continue; }
     if (msg && msg.type === "settings-set") { send(settingsSet(msg.settings || {})); continue; }
-    if (msg && msg.type === "jobs") { answer(() => jobs()); continue; }
-    if (msg && msg.type === "publish") { answer(() => publish(msg.slug)); continue; }
-    if (msg && msg.type === "deploy-status") { answer(() => deployStatus(msg.slug)); continue; }
-    if (msg && msg.type === "link-start") { answer(() => linkStart(msg.provider)); continue; }
-    answer(() => dispatch(msg && msg.payload ? msg.payload : msg));
+    if (msg && msg.type === "jobs") { answer(() => companion(jobs)()); continue; }
+    if (msg && msg.type === "publish") { answer(() => companion(publish)(msg.slug)); continue; }
+    if (msg && msg.type === "deploy-status") { answer(() => companion(deployStatus)(msg.slug)); continue; }
+    if (msg && msg.type === "link-start") { answer(() => companion(linkStart)(msg.provider)); continue; }
+    answer(() => companion(dispatch)(msg && msg.payload ? msg.payload : msg));
   }
 });
 process.stdin.on("end", () => { ended = true; maybeExit(); });

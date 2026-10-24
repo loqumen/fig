@@ -246,7 +246,7 @@ function runGeneration(jobDir, settings) {
     // — a half-revised page and no changes.json (2026-08-05). Detached, the
     // run survives the restart and reconcileJobs re-adopts it by pid.
     detached: true,
-    env: { ...process.env, PATH: [process.env.PATH, path.join(os.homedir(), ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"].join(":") },
+    env: { ...process.env, PATH: [path.dirname(process.execPath), process.env.PATH, path.join(os.homedir(), ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"].join(":") },
   });
 
   // Translate the event stream to short plain-English status lines, written
@@ -491,7 +491,7 @@ function deployLinked(ps, jobDir, slug, assetNote) {
       : ["--yes", PIN.vercel, "deploy", "--prod", "--yes"];
     // launchd's bare PATH has no user bin dirs — without this, npx is
     // ENOENT and every publish fails (seen live 2026-08-04).
-    const env = { ...process.env, PATH: [process.env.PATH, path.join(os.homedir(), ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"].join(":") };
+    const env = { ...process.env, PATH: [path.dirname(process.execPath), process.env.PATH, path.join(os.homedir(), ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"].join(":") };
     execFile("npx", args, { cwd: ps.dir, env }, (err, stdout, stderr) => {
       if (err) {
         fs.writeFileSync(path.join(jobDir, "deploy.txt"), "Publish failed: " + String(err.message).slice(0, 300));
@@ -537,7 +537,7 @@ function deployToVercel(jobDir, settings) {
     fs.writeFileSync(src, html);
 
     const runVercel = (note) => {
-      const env = { ...process.env, PATH: [process.env.PATH, path.join(os.homedir(), ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"].join(":") };
+      const env = { ...process.env, PATH: [path.dirname(process.execPath), process.env.PATH, path.join(os.homedir(), ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"].join(":") };
       execFile("vercel", ["--prod"], { cwd: settings.vercelDir, env }, (err, stdout) => {
         fs.writeFileSync(
           path.join(jobDir, "deploy.txt"),
@@ -1056,7 +1056,7 @@ async function handle(req, res) {
     if (!script) { res.writeHead(500); res.end("fig-link.js missing"); return; }
     const child = spawn(process.execPath, [script, prov], {
       detached: true, stdio: "ignore",
-      env: { ...process.env, PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].join(":") },
+      env: { ...process.env, PATH: [path.dirname(process.execPath), process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].join(":") },
     });
     child.unref();
     res.writeHead(200, { "Content-Type": "application/json" });
@@ -1269,7 +1269,24 @@ ${transient ? '<p class="muted">This looks temporary (a usage limit or a busy AP
 // A thrown error in a handler answers 500 and keeps the daemon alive — an
 // unhandled rejection here used to kill the process (KeepAlive respawn or
 // not, every in-flight request died with it).
+// Start-on-demand mode (FIG_IDLE_EXIT_MIN, set by the on-demand LaunchAgent): the
+// companion exits after that many minutes with no requests and nothing generating,
+// and the native host asks launchd to start it again the next time Fig needs it.
+const IDLE_EXIT_MIN = Number(process.env.FIG_IDLE_EXIT_MIN) || 0;
+let lastActivity = Date.now();
+if (IDLE_EXIT_MIN > 0) {
+  setInterval(() => {
+    if (Date.now() - lastActivity < IDLE_EXIT_MIN * 60000) return;
+    let generating = false;
+    try { generating = jobsList().some((j) => j.phase === "generating"); } catch { generating = true; }
+    if (generating) return;
+    console.log(`[figd] idle for ${IDLE_EXIT_MIN} min with nothing generating; exiting (starts again on demand)`);
+    process.exit(0);
+  }, 60000).unref();
+}
+
 const server = http.createServer((req, res) => {
+  lastActivity = Date.now();
   handle(req, res).catch((e) => {
     try {
       res.writeHead(500, { "Content-Type": "application/json", ...corsHeaders(req) });
@@ -1287,8 +1304,11 @@ function prewarmClis() {
   for (const pkg of Object.values(PIN)) {
     const c = spawn("npx", ["--yes", pkg, "--version"], {
       detached: true, stdio: "ignore",
-      env: { ...process.env, PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].join(":") },
+      // npx sits next to the node running this daemon (nvm, keg-only Homebrew, ...)
+      env: { ...process.env, PATH: [path.dirname(process.execPath), process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin"].join(":") },
     });
+    // A missing npx only skips the prewarm; it must never take the daemon down.
+    c.on("error", (e) => console.log(`[figd] CLI prewarm skipped: ${e.code || e.message}`));
     c.on("exit", (code) => { if (code === 0 && ++ok === total) fs.writeFileSync(marker, ""); });
     c.unref();
   }

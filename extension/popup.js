@@ -11,7 +11,7 @@ const send = (msg) => new Promise((resolve) => {
   } catch (e) { resolve({ ok: false, error: String(e && e.message || e) }); }
 });
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
-const NOT_RUNNING = "The Fig companion isn't running. Open Fig Companion, then reopen this.";
+const NOT_RUNNING = "The Fig companion couldn't start. Run installer/install-on-demand.sh, then reopen this.";
 
 $("open").addEventListener("click", async () => {
   const r = await send({ type: "fig-open" });
@@ -28,10 +28,16 @@ function pingNative() {
   });
 }
 (async () => {
-  let up = await pingNative();
-  if (!up) { try { await fetch("http://127.0.0.1:41414/", { method: "GET" }); up = true; } catch { up = false; } }
+  // The native host starts the companion on demand, so reaching the host is enough.
+  if (await pingNative()) {
+    $("dot").className = "dot ok";
+    $("connText").textContent = "Companion ready. It starts when Fig needs it.";
+    return;
+  }
+  let up = false;
+  try { await fetch("http://127.0.0.1:41414/", { method: "GET" }); up = true; } catch { up = false; }
   $("dot").className = "dot " + (up ? "ok" : "bad");
-  $("connText").textContent = up ? "Companion running" : "Companion not running. Open Fig Companion.";
+  $("connText").textContent = up ? "Companion running" : "Companion not set up. Run installer/install-on-demand.sh.";
 })();
 
 // ---------- your figs ----------
