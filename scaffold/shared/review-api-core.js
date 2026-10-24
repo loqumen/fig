@@ -17,6 +17,7 @@
 //   insertComment(version, c) -> { comment, created } (an existing id wins)
 //   addReply(version, parentId, reply) -> "added" | "duplicate" | "missing"
 //   deleteReply(version, replyId) -> boolean
+//   removeComment(version, id) -> boolean (deleted a top-level comment)
 //   patchComment(version, id, fields) -> c|null
 //   addStroke(version, s)                     deleteStroke(version, id)
 //   clearAuthor(author, versions, before) -> { comments, strokes }
@@ -166,10 +167,15 @@ export async function handleComments(req, store) {
         return json(200, { deleted: "all", count });
       }
       if (!id) return json(400, { error: "id query param required" });
-      const direct = await store.getComment(version, id);
-      if (direct) {
-        await store.deleteComment(version, id);
-        return json(200, { deleted: id });
+      if (has(store, "removeComment")) {
+        // one round trip: delete if it is a top-level comment, else try the replies
+        if (await store.removeComment(version, id)) return json(200, { deleted: id });
+      } else {
+        const direct = await store.getComment(version, id);
+        if (direct) {
+          await store.deleteComment(version, id);
+          return json(200, { deleted: id });
+        }
       }
       if (has(store, "deleteReply")) {
         return (await store.deleteReply(version, id))

@@ -22,12 +22,24 @@ export function ensureSchema(db) {
 const parse = (rows) => rows.map((r) => JSON.parse(r.data));
 const changes = (r) => (r && r.meta && r.meta.changes) || 0;
 
+// Tables are created only when a query finds one missing, so a database that already
+// has them (every one after its first write) pays nothing for the check.
+const missingTable = (e) => /no such table/i.test(String(e && e.message || e));
+async function withSchema(db, fn) {
+  try { return await fn(); }
+  catch (e) {
+    if (!missingTable(e)) throw e;
+    await ensureSchema(db);
+    return fn();
+  }
+}
+
 export function d1Store(db) {
   const q = (sql, ...args) => db.prepare(sql).bind(...args);
   const all = async (sql, ...args) => (await q(sql, ...args).all()).results || [];
   const first = (sql, ...args) => q(sql, ...args).first();
-  const run = async (sql, ...args) => { await ensureSchema(db); return q(sql, ...args).run(); };
-  const read = async (fn) => { await ensureSchema(db); return fn(); };
+  const run = (sql, ...args) => withSchema(db, () => q(sql, ...args).run());
+  const read = (fn) => withSchema(db, fn);
 
   const getComment = (version, id) => read(async () => {
     const row = await first("SELECT data FROM comments WHERE version = ?1 AND id = ?2", version, id);
@@ -78,6 +90,9 @@ export function d1Store(db) {
     async deleteComment(version, id) {
       await run("DELETE FROM comments WHERE version = ?1 AND id = ?2", version, id);
     },
+    async removeComment(version, id) {
+      return changes(await run("DELETE FROM comments WHERE version = ?1 AND id = ?2", version, id)) > 0;
+    },
     async deleteAllComments(version) {
       return changes(await run("DELETE FROM comments WHERE version = ?1", version));
     },
@@ -85,11 +100,10 @@ export function d1Store(db) {
     // ---- strokes
     getStrokes: (version) => read(async () => parse(await all("SELECT data FROM stroke_items WHERE version = ?1 ORDER BY rowid", version))),
     async putStrokes(version, arr) {
-      await ensureSchema(db);
-      await db.batch([
+      await withSchema(db, () => db.batch([
         q("DELETE FROM stroke_items WHERE version = ?1", version),
         ...arr.map((s) => q("INSERT INTO stroke_items (version, id, data) VALUES (?1, ?2, ?3) ON CONFLICT(version, id) DO NOTHING", version, s.id, JSON.stringify(s))),
-      ]);
+      ]));
     },
     async addStroke(version, s) {
       await run("INSERT INTO stroke_items (version, id, data) VALUES (?1, ?2, ?3) ON CONFLICT(version, id) DO NOTHING", version, s.id, JSON.stringify(s));
@@ -103,14 +117,13 @@ export function d1Store(db) {
 
     // ---- the trash button: one batch, so it can't half-finish
     async clearAuthor(author, versions, before) {
-      await ensureSchema(db);
       if (!versions.length) return { comments: 0, strokes: 0 };
       const marks = versions.map((_, i) => `?${i + 3}`).join(", ");
       const mine = `json_extract(data, '$.author') = ?1 AND COALESCE(json_extract(data, '$.timestamp'), 0) <= ?2 AND version IN (${marks})`;
-      const [c, s] = await db.batch([
+      const [c, s] = await withSchema(db, () => db.batch([
         q(`DELETE FROM comments WHERE ${mine}`, author, before, ...versions),
         q(`DELETE FROM stroke_items WHERE ${mine}`, author, before, ...versions),
-      ]);
+      ]));
       return { comments: changes(c), strokes: changes(s) };
     },
 
